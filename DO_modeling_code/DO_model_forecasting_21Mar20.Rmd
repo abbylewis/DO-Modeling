@@ -33,7 +33,7 @@ First steps:
 - Create one forecast half way through 2014: DONE
 - Create forecasts for all of 2014: DONE
 - Create forecasts for all training years: DONE
-- Set this up to archive everything in github
+- Set this up to archive everything in github: DONE!!
 - Need a way of quantifying how good the model is
   - Dataframe where rows are the date the model was run and columns are the dates of the summer, and each cell is the prediction, and then one row with the actual observations?
   - Calculate RMSE a certain number of days out
