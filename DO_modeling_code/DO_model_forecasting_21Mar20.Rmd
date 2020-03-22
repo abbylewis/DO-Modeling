@@ -35,8 +35,9 @@ First steps:
 - Create forecasts for all training years: DONE
 - Set this up to archive everything in github: DONE!!
 - Need a way of quantifying how good the model is
-  - Dataframe where rows are the date the model was run and columns are the dates of the summer, and each cell is the prediction, and then one row with the actual observations?
   - Calculate RMSE a certain number of days out
+  - So this would be best with a final spreadsheet where there's a column for predictions a certain number of days out and observations on that day
+  - TODAY PLUS1 PLUS1_OBS PLUS2 PLUS2_OBS, etc
   - Plot of rmse vs the number of days away, colors for the year
 - Start comparing different models
 
@@ -221,7 +222,7 @@ plot_hindcast <- function(est_out){
 }
 
 
-plot_o2 = function(est_out, today, start, stop){
+plot_o2 = function(est_out, today, start, stop, n_days = 14){
   mean_o2_est = apply(est_out$Y[1,,], 1, FUN = mean)
   plot(mean_o2_est ~ est_out$dates, type ='l', 
        ylim = c(-1,25),#max(c(est_out$Y[1,,], est_out$obs[1,,]),na.rm = T)),
@@ -231,7 +232,7 @@ plot_o2 = function(est_out, today, start, stop){
           col = 'grey')
   }
   lines(mean_o2_est ~ est_out$dates, col = 'black', lwd =2 )
-  future_obs <- obs[obs$datetime>today&obs$datetime<=(today+14),]
+  future_obs <- obs[obs$datetime>today&obs$datetime<=(today+n_days),]
   obs <- obs[obs$datetime<=today,]
   points(obs$O2_mgL~obs$datetime, pch = 16, col = rgb(1,0,0))
   points(future_obs$O2_mgL~future_obs$datetime, pch = 16, col = rgb(0,0,1))
@@ -280,17 +281,33 @@ dev.off()
 
 ```{r}
 #simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
+run_space <- 7
+n_days <- 14
 start = as.Date("2016-06-01")
 stop = as.Date("2016-10-07")
+
+#Create results dataframe
+days <- as.numeric(difftime(stop,start, units = "days"))
+rows <- floor(days/run_space)
+cols <- n_days*2+1
+results_2016 <- matrix(NA, nrow = rows, ncol = cols)
+n <- rep(seq(1,n_days),each = 2)
+type <- rep(c("_pred","_obs"),each = n_days)
+col_names <- c("TODAY",paste("PLUS",n,type,sep = ""))
+colnames(results_2016)<-col_names
+
 inputs_2016 <- inputs_year(start,stop)
 today <- start
-dir.create("../DO_modeling_figures/3Mar20/2016")
-setwd("../DO_modeling_figures/3Mar20/2016")
+dir.create("../DO_modeling_figures/22Mar20/2016")
+setwd("../DO_modeling_figures/22Mar20/2016")
 png(file="example%02d.png", width=480, height=480)
 while(today < stop){
-  est2016 <- run_do_hindcast(inputs_2016, obs, today)
+  row<- as.numeric(difftime(today,start))/run_space+1
+  est2016 <- run_do_hindcast(inputs_2016, obs, today, n_days)
+  mean_o2_est = apply(est2016$Y[1,,], 1, FUN = mean)
+  results_2016[row,2:(1+n_days)]<-tail(mean_o2_est, n = n_days)
   plot_o2(est2016, today, start, stop)
-  today <- today+7
+  today <- today+run_space
 }
 # Use image magick
 #setwd("../DO_modeling_figures/3Mar20/2016") #You need to run this if and only if you haven't run the setwd() line above
