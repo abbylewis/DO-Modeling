@@ -1,0 +1,478 @@
+---
+title: "DO Model Hindcasting"
+author: "Abby Lewis"
+date: "12/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(tidyverse)
+library(zoo)
+library(deSolve)
+library(lubridate)
+library(formatR)
+library(knitr)
+source('EnKF_functions_13Dec19.R')
+```
+
+## Model
+```{r}
+
+O2_model <- function(times, states, parms, inputs){
+  
+  #STATES 
+  O2_mgL <- states[1]
+
+  #PARMS 
+  R20 <- as.numeric(parms[1])
+  theta <- as.numeric(parms[2])
+  vmax <- as.numeric(parms[3])
+  kc <- as.numeric(parms[4])
+  theta_C <- as.numeric(parms[5])
+  ko2 <- as.numeric(parms[6])
+  ko2_C <- as.numeric(parms[7])
+  sss_scalar <- as.numeric(parms[8])
+  
+  #INPUT
+  SSS <- inputs[1]
+  inflow <- inputs[2] 
+  outflow <- inputs[3] 
+  entrain <- inputs[4] 
+  temp <- inputs[5]
+  hypo_volume <- inputs[6]
+  
+  #CALCULATIONS
+  R = R20*theta^(temp-20)
+  O2_mm = vmax*O2_mgL/(O2_mgL+ko2)
+  BOD = min(R,O2_mm)
+  scalar = 1
+  if(SSS>0){
+    scalar = sss_scalar
+  }
+  OD = BOD*scalar
+
+  #DERIVATIVE
+  dO2_mgLdt <- SSS+inflow-OD-outflow + entrain
+
+  #RETURN A LIST OF THE DERIVATIVES
+  return(list(c(dO2_mgLdt), c(parms)))
+}
+```
+
+## Parameters
+```{r}
+parms <- c(
+  R20 = .3, #mg/L/day. This is a high R20 compared to other studies. 
+  #I used a high value to increase the importance of respiration and better fit the data
+  #It makes sense that I would need a high R20 to compensate for the high theta value
+  theta = 1.1, #This is on the upper end of possible values for theta. 
+  #I increased it to give increased temperature sensitivty
+  vmax = 4,
+  kc = 2, #This changes the importance of chemical oxygen demand. 
+  #I used a higher value than other studies to better fit the data.
+  theta_C = 1.1, #This changes the temperature sensitiviy of chemical oxygen demand. 
+  #This is on the upper end of possible values for theta. 
+  #I increased it to give increased temperature sensitivty
+  ko2 = 10, #mg/L. I picked the value that best fit the data
+  ko2_C = 20, #mg/L. Matches ko2 for biological oxygen demand
+  sss_scalar = 2
+)
+```
+
+```{r} 
+# From GLEON workshop 
+# I made all of these up more or less randomly. Not sure how I should have come up with them
+
+
+n_en = 100 # number of ensembles 
+# coefficient of variation (CV) as a representation of uncertainty 
+param_cv = c(R20 = .1,
+             theta = .05,
+             kc = .1,
+             vmax = .05,
+             theta_C = .05,
+             ko2 = .1,
+             ko2_C = .1,
+             sss_scalar = .1)
+driver_cv = c(SSS = .05,
+    inflow = .05,
+    outflow = .05,
+    entrain = .05,
+    temp = .01,
+    hypo_volume = .1) # Coefficient of variation of driver data 
+init_cond_cv = .1
+obs_cv = 0.05
+```
+
+```{r}
+start = as.Date("2019-06-03")
+stop = as.Date("2019-10-30")
+#start = as.Date("2018-06-04")
+#stop = as.Date("2018-10-22")
+#start = as.Date("2017-06-28")
+#stop = as.Date("2017-07-12")
+#start = as.Date("2016-06-13")
+#stop = as.Date("2016-10-07")
+#start = as.Date("2015-06-08")
+#stop = as.Date("2015-09-28")
+#start = as.Date("2014-06-02")
+#stop = as.Date("2014-10-15")
+
+#Create observations dataframe
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+CTD = CTD%>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date))
+obs <- CTD %>%
+  filter(!is.na(Conc))%>%
+  select(Date, Conc)%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(O2_mgL = mean(Conc))
+
+#Create driver data frame (called model_inputs)
+SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+SSS$time <- as.Date(SSS$time)
+dates = data.frame(seq(start,stop,by = "days"))
+colnames(dates) <- "Date"
+inputs = dates %>%
+  left_join(CTD %>%
+              dplyr::select(Date,Conc,Temp,hypoVolume,thermo_depth), by = "Date")%>%
+  left_join(SSS %>% 
+              dplyr::select(time, scfm), by = c("Date"="time"))%>%
+  arrange(Date)%>%
+  filter(Date<=stop, 
+         Date>=start)%>%
+  group_by(Date)%>%
+  summarise(Conc = mean(Conc),
+            Temp = mean(Temp),
+            hypoVolume = mean(hypoVolume),
+            thermo_depth = mean(thermo_depth),
+            scfm = mean(scfm))%>%
+  mutate(Conc = na.approx(Conc, na.rm = FALSE),
+         Temp = na.approx(Temp, na.rm = FALSE),
+         hypoVolume = na.approx(hypoVolume, na.rm = FALSE),
+         thermo_depth = na.approx(thermo_depth, na.rm = FALSE),
+         scfm = ifelse(Date>=as.Date("2013-05-15"),scfm,0),
+         SSS_add_conc = scfm*50*1000000/hypoVolume)
+simulation_time <- as.numeric(difftime(stop, start, unit = "days")+1) #days
+#Assemble driver data
+model_inputs <- list(datetime = inputs$Date,
+  SSS = inputs$SSS_add_conc,
+  inflow = rep(1,simulation_time),
+  outflow = rep(1,simulation_time),
+  entrain = rep(0.01,simulation_time),
+  temp = inputs$Temp,
+  hypo_volume = inputs$hypoVolume)
+model_inputs<- data.frame(model_inputs)
+
+#Set initial conditions
+yini <- c(
+  O2_mgL = inputs$Conc[inputs$Date == start]
+)
+
+#obs <- inputs %>%
+#  select(Date,Conc)%>%
+#  rename(datetime = Date,
+#         O2_mgL = Conc)
+```
+
+
+
+```{r} 
+#' wrapper for running EnKF 
+#' 
+#' @param n_en number of model ensembles 
+#' @param start start date of model run 
+#' @param stop date of model run
+#' @param time_step model time step, defaults to days 
+#' @param obs_file observation file
+#' @param driver_file driver data file
+#' @param n_states_est number of states we're estimating 
+#' @param n_params_est number of parameters we're estimating 
+#' @param n_params_obs number of parameters for which we have observations 
+#' @param n_drivers number of drivers in the model
+#' @param parm_init initial parameter guesses
+#' @param obs_cv coefficient of variation of observations 
+#' @param param_cv coefficient of variation of parameters 
+#' @param driver_cv coefficient of variation of driver data for each driver, respectively
+#' @param init_cond_cv initial condition CV 
+est_out = EnKF(n_en = n_en, 
+           start = start,
+           stop = stop,
+           time_step = "days",
+           obs_file = obs, 
+           driver_file = model_inputs, 
+           n_states_est = 1,
+           n_params_est = 8,
+           n_params_obs = 0,
+           n_drivers = 6,
+           parm_init = parms, 
+           obs_cv = obs_cv,
+           param_cv = param_cv,
+           driver_cv = driver_cv, 
+           init_cond_cv = init_cond_cv)
+```
+
+```{r}
+# plotting 
+plot_o2 = function(est_out){
+  mean_o2_est = apply(est_out$Y[1,,], 1, FUN = mean)
+  plot(mean_o2_est ~ est_out$dates, type ='l', 
+       ylim = c(-1,20), #max(c(est_out$Y[1,,], est_out$obs[1,,]),na.rm = T)
+       col = 'grey', ylab = 'O2 (mg L-1)', xlab = '')
+  for(i in 2:n_en){
+    lines(est_out$Y[1,,i] ~ est_out$dates, 
+          col = 'grey')
+  }
+  lines(mean_o2_est ~ est_out$dates, col = 'black', lwd =2 )
+  points(est_out$obs[1,,] ~ 
+           est_out$dates, pch = 16, col = 'red')
+  arrows(est_out$dates, est_out$obs[1,,] - 
+           est_out$state_sd, 
+         est_out$dates, est_out$obs[1,,] +
+           est_out$state_sd, 
+         code = 3, length = 0.1, angle = 90, col = 'red')
+}
+plot_o2(est_out) 
+```
+
+```{r}
+param_names = c("R20","theta","vmax","kc","theta_C","ko2","ko2_C","sss_scalar")
+plot_param = function(est_out,num,name = "Parameter value"){
+  num = num+1
+  mean_param_est = apply(est_out$Y[num,,], 1, FUN = mean)
+  plot(mean_param_est ~ est_out$dates, type ='l', 
+       ylim = range(est_out$Y[num,,]),
+       col = 'grey', ylab = name, xlab ='', main = param_names[num-1])
+  for(i in 2:n_en){
+    lines(est_out$Y[num,,i] ~ est_out$dates, col = 'grey')
+  }
+  lines(mean_param_est ~ est_out$dates, col = 'black', lwd = 2)
+}
+#1 : R20 
+#2 : theta
+#3 : kc
+#4 : theta_C
+#5 : ko2
+#6 : ko2_C
+plot_param(est_out,3)
+```
+Automated
+```{r}
+run_do_hindcast <- function(start,stop){
+  #Create observations dataframe
+  CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+  CTD = CTD%>%
+    filter(hypoVolume>0,
+           !is.na(Conc))%>%
+    mutate(Date = as.Date(Date))
+  obs <- CTD %>%
+    filter(!is.na(Conc))%>%
+    select(Date, Conc)%>%
+    rename(datetime = Date)%>%
+    group_by(datetime)%>%
+    summarize(O2_mgL = mean(Conc))
+  
+  #Create driver data frame (called model_inputs)
+  SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+  SSS$time <- as.Date(SSS$time)
+  dates = data.frame(seq(start,stop,by = "days"))
+  colnames(dates) <- "Date"
+  inputs = dates %>%
+    left_join(CTD %>%
+                dplyr::select(Date,Conc,Temp,hypoVolume,thermo_depth), by = "Date")%>%
+    left_join(SSS %>% 
+                dplyr::select(time, scfm), by = c("Date"="time"))%>%
+    arrange(Date)%>%
+    filter(Date<=stop, 
+           Date>=start)%>%
+    group_by(Date)%>%
+    summarise(Conc = mean(Conc),
+              Temp = mean(Temp),
+              hypoVolume = mean(hypoVolume),
+              thermo_depth = mean(thermo_depth),
+              scfm = mean(scfm))%>%
+    mutate(Conc = na.approx(Conc, na.rm = FALSE),
+           Temp = na.approx(Temp, na.rm = FALSE),
+           hypoVolume = na.approx(hypoVolume, na.rm = FALSE),
+           thermo_depth = na.approx(thermo_depth, na.rm = FALSE),
+           scfm = ifelse(Date>=as.Date("2013-05-15"),scfm,0),
+           SSS_add_conc = scfm*50*1000000/hypoVolume)
+  simulation_time <- as.numeric(difftime(stop, start, unit = "days")+1) #days
+  #Assemble driver data
+  model_inputs <- list(datetime = inputs$Date,
+    SSS = inputs$SSS_add_conc,
+    inflow = rep(1,simulation_time),
+    outflow = rep(1,simulation_time),
+    entrain = rep(0.01,simulation_time),
+    temp = inputs$Temp,
+    hypo_volume = inputs$hypoVolume)
+  model_inputs<- data.frame(model_inputs)
+  
+  #Set initial conditions
+  yini <- c(
+    O2_mgL = inputs$Conc[inputs$Date == start]
+  )
+  
+  #Run EnKF
+  est_out = EnKF(n_en = n_en, 
+           start = start,
+           stop = stop,
+           time_step = "days",
+           obs_file = obs, 
+           driver_file = model_inputs, 
+           n_states_est = 1,
+           n_params_est = 8,
+           n_params_obs = 0,
+           n_drivers = 6,
+           parm_init = parms, 
+           obs_cv = obs_cv,
+           param_cv = param_cv,
+           driver_cv = driver_cv, 
+           init_cond_cv = init_cond_cv)
+  return(est_out)
+}
+
+plot_hindcast <- function(est_out){
+  par(mfrow = c(2,4))
+  param_names = c("R20","theta","vmax","kc","theta_C","ko2","ko2_C","sss_scalar")
+  plot_param = function(est_out,num,name = "Parameter value"){
+    num = num+1
+    mean_param_est = apply(est_out$Y[num,,], 1, FUN = mean)
+    plot(mean_param_est ~ est_out$dates, type ='l', 
+         ylim = range(est_out$Y[num,,]),
+         col = 'grey', ylab = name, xlab ='', main = param_names[num-1])
+    for(i in 2:n_en){
+      lines(est_out$Y[num,,i] ~ est_out$dates, col = 'grey')
+    }
+    lines(mean_param_est ~ est_out$dates, col = 'black', lwd = 2)
+  }
+  for(i in seq(1,length(param_names))){
+    plot_param(est_out,i)
+  }
+}
+
+
+plot_o2 = function(est_out){
+  mean_o2_est = apply(est_out$Y[1,,], 1, FUN = mean)
+  plot(mean_o2_est ~ est_out$dates, type ='l', 
+       ylim = c(-1,25),#max(c(est_out$Y[1,,], est_out$obs[1,,]),na.rm = T)),
+       col = 'grey', ylab = 'O2 (mg L-1)', xlab = '',main = year(est_out$dates[1]))
+  for(i in 2:n_en){
+    lines(est_out$Y[1,,i] ~ est_out$dates, 
+          col = 'grey')
+  }
+  lines(mean_o2_est ~ est_out$dates, col = 'black', lwd =2 )
+  points(est_out$obs[1,,] ~ 
+           est_out$dates, pch = 16, col = 'red')
+  #arrows(est_out$dates, est_out$obs[1,,] - 
+   #        est_out$state_sd, 
+    #     est_out$dates, est_out$obs[1,,] +
+     #      est_out$state_sd, 
+      #   code = 3, length = 0.1, angle = 90, col = 'red')
+}
+```
+
+```{r}
+
+start = as.Date("2014-06-02")
+stop = as.Date("2014-10-15")
+est2014 <- run_do_hindcast(start,stop)
+start = as.Date("2015-06-08")
+stop = as.Date("2015-09-28")
+est2015 <- run_do_hindcast(start,stop)
+start = as.Date("2016-06-01")
+stop = as.Date("2016-10-07")
+est2016 <- run_do_hindcast(start,stop)
+start = as.Date("2017-06-28")
+stop = as.Date("2017-07-12")
+est2017 <- run_do_hindcast(start,stop)
+start = as.Date("2018-06-04")
+stop = as.Date("2018-10-22")
+est2018 <- run_do_hindcast(start,stop)
+start = as.Date("2019-06-03")
+stop = as.Date("2019-10-30")
+est2019 <- run_do_hindcast(start,stop)
+```
+
+```{r}
+jpeg("../DO_modeling_figures/2014_hindcast_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_o2(est2014)
+dev.off()
+jpeg("../DO_modeling_figures/2014_params_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_hindcast(est2014)
+dev.off()
+jpeg("../DO_modeling_figures/2015_hindcast_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_o2(est2015)
+dev.off()
+jpeg("../DO_modeling_figures/2015_params_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_hindcast(est2015)
+dev.off()
+jpeg("../DO_modeling_figures/2016_hindcast_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_o2(est2016)
+dev.off()
+jpeg("../DO_modeling_figures/2016_params_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_hindcast(est2016)
+dev.off()
+jpeg("../DO_modeling_figures/2017_hindcast_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_o2(est2017)
+dev.off()
+jpeg("../DO_modeling_figures/2017_params_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_hindcast(est2017)
+dev.off()
+jpeg("../DO_modeling_figures/2018_hindcast_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_o2(est2018)
+dev.off()
+jpeg("../DO_modeling_figures/2018_params_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_hindcast(est2018)
+dev.off()
+jpeg("../DO_modeling_figures/2019_hindcast_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_o2(est2019)
+dev.off()
+jpeg("../DO_modeling_figures/2019_params_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+plot_hindcast(est2019)
+dev.off()
+
+jpeg("../DO_modeling_figures/hindcast_2014_2019_13Dec19.jpg",width = 7.5,height = 4,units = "in", res = 300)
+par(mfrow = c(2,3))
+plot_o2(est2014)
+plot_o2(est2015)
+plot_o2(est2016)
+plot_o2(est2017)
+plot_o2(est2018)
+plot_o2(est2019)
+dev.off()
+
+```
+
+
+
+Just for troubleshooting:
+```{r}
+n_en = n_en
+start = start
+stop = stop
+time_step = "days"
+obs_file = obs
+driver_file = model_inputs
+n_states_est = 1
+n_params_est = 8
+n_params_obs = 0
+n_drivers = 6
+parm_init = parms
+obs_cv = obs_cv
+param_cv = param_cv
+driver_cv = driver_cv
+init_cond_cv = init_cond_cv
+```
+
+Notes for next steps: 
+Informed priors for parameters (there are points where r20 = -20)
+Make it so that the kalman filter only runs when there's an observation -- the idea of comparing it to 0 seems v sketch???
+Quantify uncertainty at each time step
+Run for other years

@@ -1,0 +1,412 @@
+---
+title: "DO Model Hindcasting"
+author: "Abby Lewis"
+date: "12/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(tidyverse)
+library(zoo)
+library(deSolve)
+library(lubridate)
+library(formatR)
+library(knitr)
+source('EnKF_functions_21Mar20.R')
+library(magick)
+library(animation)
+```
+
+Created 20 March 20 to convert my model to a forecasting framework
+What I want is 14 days of predictions starting from the date of the forecast
+- Before those 14 days it can work just as normal, assimilating data, etc
+- I do need an estimation of uncertainty at all of those points
+- Do I run this every day? Seem like there's not really a point given that there won't be any new driver data/data assimilation
+- Maybe every week for now?
+- NOTE: got rid of the flexible hypo volume. I think that's what was destroying 2016
+
+First steps:
+- Set aside some data as test (2013, 2015, 2019) and some as training (2014, 2016, 2017, 2018): DONE
+- Create one forecast half way through 2014: DONE
+- Create forecasts for all of 2014: DONE
+- Create forecasts for all training years: DONE
+- Set this up to archive everything in github
+- Need a way of quantifying how good the model is
+  - Dataframe where rows are the date the model was run and columns are the dates of the summer, and each cell is the prediction, and then one row with the actual observations?
+  - Calculate RMSE a certain number of days out
+  - Plot of rmse vs the number of days away, colors for the year
+- Start comparing different models
+
+
+## Model
+```{r}
+
+O2_model <- function(times, states, parms, inputs){
+  
+  #STATES 
+  O2_mgL <- states[1]
+
+  #PARMS 
+  R20 <- as.numeric(parms[1])
+  theta <- as.numeric(parms[2])
+  ko2 <- as.numeric(parms[3])
+  sss_scalar <- as.numeric(parms[4])
+  k_chla <- as.numeric(parms[5])
+  
+  #INPUT
+  SSS <- inputs[1]
+  temp <- inputs[2]
+  chla <- inputs[3]
+  
+  #CALCULATIONS
+  R = R20*theta^(temp-20)*O2_mgL/(O2_mgL+ko2)
+  scalar = 1
+  if(SSS>0){
+    scalar = sss_scalar
+  }
+  OD = R*scalar
+
+  #DERIVATIVE
+  dO2_mgLdt <- SSS-OD
+
+  #RETURN A LIST OF THE DERIVATIVES
+  return(list(c(dO2_mgLdt), c(parms)))
+}
+```
+
+## Parameters
+```{r}
+parms <- c(
+  R20 = .7, #mg/L/day
+  theta = 1.1, 
+  ko2 = 1, #mg/L
+  sss_scalar = 3
+)
+```
+
+```{r} 
+# From GLEON workshop 
+# I made all of these up more or less randomly. Not sure how I should have come up with them
+
+
+n_en = 100 # number of ensembles 
+# coefficient of variation (CV) as a representation of uncertainty 
+param_cv = c(R20 = .1,
+             theta = .01,
+             ko2 = .1,
+             sss_scalar = .2)
+driver_cv = c(SSS = .2,
+    temp = .2) # Coefficient of variation of driver data 
+init_cond_cv = .1
+obs_cv = 0.05
+```
+
+```{r}
+#Create observations dataframe
+  CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+  CTD = CTD%>%
+    filter(hypoVolume>0,
+           !is.na(Conc))%>%
+    mutate(Date = as.Date(Date))
+  obs <- CTD %>%
+    filter(!is.na(Conc))%>%
+    select(Date, Conc)%>%
+    rename(datetime = Date)%>%
+    group_by(datetime)%>%
+    summarize(O2_mgL = mean(Conc))
+  CTD$hypoVolume<-mean(CTD$hypoVolume, na.rm = TRUE)
+  
+  mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
+  median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
+  
+#Create driver data frame (called model_inputs)
+  SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+  SSS$time <- as.Date(SSS$time)
+```
+
+
+```{r}
+inputs_year<- function(start, stop){
+  dates = data.frame(seq(start,stop,by = "days"))
+  colnames(dates) <- "Date"
+  inputs = dates %>%
+    left_join(CTD %>%
+                dplyr::select(Date,Conc,Temp,hypoVolume,thermo_depth,Chla_ugL,SA_m2), by = "Date")%>%
+    left_join(SSS %>% 
+                dplyr::select(time, scfm), by = c("Date"="time"))%>%
+    arrange(Date)
+  if(all(is.na(inputs$Chla_ugL))){
+    inputs$Chla_ugL<-1
+  }
+  inputs = inputs%>%
+    group_by(Date)%>%
+    summarise(Conc = mean(Conc),
+              Temp = mean(Temp),
+              hypoVolume = mean(hypoVolume),
+              thermo_depth = mean(thermo_depth),
+              scfm = mean(scfm),
+              Chla = mean(Chla_ugL),
+              SA = mean(SA_m2))
+}
+
+run_do_hindcast <- function(inputs, obs, today, n_days = 14){
+  obs = obs%>%
+    filter(datetime<=today)
+  inputs = inputs%>%
+    filter(Date<=stop, 
+           Date>=start,
+           Date<=today+n_days)
+  inputs[inputs$Date > today,c(2,3,4,5,7,8)] <- NA
+  inputs = inputs%>%
+    mutate(Conc = na.approx(Conc, rule = 2),
+           Temp = na.approx(Temp, rule = 2),
+           hypoVolume = na.approx(hypoVolume, rule = 2),
+           thermo_depth = na.approx(thermo_depth, rule = 2),
+           scfm = ifelse(Date>=as.Date("2013-05-15"),scfm,0),
+           SSS_add_conc = scfm*50*1000000/hypoVolume,
+           Chla = na.approx(Chla, rule = 2),
+           SA = na.approx(SA, rule = 2))
+  simulation_time <- as.numeric(difftime(min(today+n_days, stop), start, unit = "days")+1) #days
+  #Assemble driver data
+  model_inputs <- list(datetime = inputs$Date,
+    SSS = inputs$SSS_add_conc,
+    temp = inputs$Temp)
+  model_inputs<- data.frame(model_inputs)
+  
+  #Set initial conditions
+  yini <- c(
+    O2_mgL = inputs$Conc[inputs$Date == start]
+  )
+
+  
+  #Run EnKF
+  est_out = EnKF(n_en = n_en, 
+           start = start,
+           stop = min(stop, today+n_days),
+           time_step = "days",
+           obs_file = obs, 
+           driver_file = model_inputs, 
+           n_states_est = 1,
+           n_params_est = 4,
+           n_params_obs = 0,
+           n_drivers = 2,
+           parm_init = parms, 
+           obs_cv = obs_cv,
+           param_cv = param_cv,
+           driver_cv = driver_cv, 
+           init_cond_cv = init_cond_cv)
+  return(est_out)
+}
+
+plot_hindcast <- function(est_out){
+  par(mfrow = c(2,3))
+  param_names = c("R20","theta","ko2","sss_scalar","chla_vmax")
+  plot_param = function(est_out,num,name = "Parameter value"){
+    num = num+1
+    mean_param_est = apply(est_out$Y[num,,], 1, FUN = mean)
+    plot(mean_param_est ~ est_out$dates, type ='l', 
+         ylim = range(est_out$Y[num,,]),
+         col = 'grey', ylab = name, xlab ='', main = param_names[num-1])
+    for(i in 2:n_en){
+      lines(est_out$Y[num,,i] ~ est_out$dates, col = 'grey')
+    }
+    lines(mean_param_est ~ est_out$dates, col = 'black', lwd = 2)
+  }
+  for(i in seq(1,length(param_names))){
+    plot_param(est_out,i)
+  }
+}
+
+
+plot_o2 = function(est_out, today, start, stop){
+  mean_o2_est = apply(est_out$Y[1,,], 1, FUN = mean)
+  plot(mean_o2_est ~ est_out$dates, type ='l', 
+       ylim = c(-1,25),#max(c(est_out$Y[1,,], est_out$obs[1,,]),na.rm = T)),
+       col = 'grey', ylab = 'O2 (mg L-1)', xlab = '',main = year(est_out$dates[1]), xlim = c(start, stop))
+  for(i in 2:n_en){
+    lines(est_out$Y[1,,i] ~ est_out$dates, 
+          col = 'grey')
+  }
+  lines(mean_o2_est ~ est_out$dates, col = 'black', lwd =2 )
+  future_obs <- obs[obs$datetime>today&obs$datetime<=(today+14),]
+  obs <- obs[obs$datetime<=today,]
+  points(obs$O2_mgL~obs$datetime, pch = 16, col = rgb(1,0,0))
+  points(future_obs$O2_mgL~future_obs$datetime, pch = 16, col = rgb(0,0,1))
+  abline(v = today)
+  #arrows(est_out$dates, est_out$obs[1,,] - 
+   #        est_out$state_sd, 
+    #     est_out$dates, est_out$obs[1,,] +
+     #      est_out$state_sd, 
+      #   code = 3, length = 0.1, angle = 90, col = 'red')
+}
+
+plot_param = function(est_out,num,name = "Parameter value"){
+  num = num+1
+  mean_param_est = apply(est_out$Y[num,,], 1, FUN = mean)
+  plot(mean_param_est ~ est_out$dates, type ='l', 
+       ylim = range(est_out$Y[num,,]),
+       col = 'grey', ylab = name, xlab ='', main = year(est_out$dates[1]))
+  for(i in 2:n_en){
+    lines(est_out$Y[num,,i] ~ est_out$dates, col = 'grey')
+  }
+  lines(mean_param_est ~ est_out$dates, col = 'black', lwd = 2)
+}
+```
+
+```{r}
+#simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
+start = as.Date("2014-06-02")
+stop = as.Date("2014-10-15")
+inputs_2014 <- inputs_year(start,stop)
+today <- start
+dir.create("../DO_modeling_figures/3Mar20/2014")
+setwd("../DO_modeling_figures/3Mar20/2014")
+png(file="example%02d.png", width=480, height=480)
+while(today < stop){
+  est2014 <- run_do_hindcast(inputs_2014, obs, today)
+  plot_o2(est2014, today, start, stop)
+  today <- today+7
+}
+# Use image magick
+#setwd("../DO_modeling_figures/3Mar20/2014") #You need to run this if and only if you haven't run the setwd() line above
+system("convert -delay 30 *.png animated_count_down.gif")
+dev.off()
+# Remove png files
+#file.remove(list.files(pattern=".png"))
+```
+
+```{r}
+#simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
+start = as.Date("2016-06-01")
+stop = as.Date("2016-10-07")
+inputs_2016 <- inputs_year(start,stop)
+today <- start
+dir.create("../DO_modeling_figures/3Mar20/2016")
+setwd("../DO_modeling_figures/3Mar20/2016")
+png(file="example%02d.png", width=480, height=480)
+while(today < stop){
+  est2016 <- run_do_hindcast(inputs_2016, obs, today)
+  plot_o2(est2016, today, start, stop)
+  today <- today+7
+}
+# Use image magick
+#setwd("../DO_modeling_figures/3Mar20/2016") #You need to run this if and only if you haven't run the setwd() line above
+system("convert -delay 30 *.png animated_count_down.gif")
+dev.off()
+# Remove png files
+#file.remove(list.files(pattern=".png"))
+
+```
+
+SKIP
+#```{r}
+plot(inputs_2016$Date,inputs_2016$Chla, )
+
+
+start = as.Date("2016-06-01")
+stop = as.Date("2016-10-07")
+inputs_2016 <- inputs_year(start,stop)
+today <- start
+dir.create("../DO_modeling_figures/3Mar20/2016_param")
+setwd("../DO_modeling_figures/3Mar20/2016_param")
+png(file="example%02d.png", width=480, height=480)
+while(today < stop){
+  est2016 <- run_do_hindcast(inputs_2016, obs, today)
+  plot_param(est2016, 1)
+  plot_param(est2016, 2)
+  plot_param(est2016, 3)
+  plot_param(est2016, 4)
+  plot_param(est2016, 5)
+  today <- today+2
+}
+#```
+
+```{r}
+#simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
+start = as.Date("2017-06-28")
+stop = as.Date("2017-07-12")
+inputs_2017 <- inputs_year(start,stop)
+today <- start
+dir.create("../DO_modeling_figures/3Mar20/2017")
+setwd("../DO_modeling_figures/3Mar20/2017")
+png(file="example%02d.png", width=480, height=480)
+while(today < stop){
+  est2017 <- run_do_hindcast(inputs_2017, obs, today)
+  plot_o2(est2017, today, start, stop)
+  today <- today+1
+}
+# Use image magick
+#setwd("../DO_modeling_figures/3Mar20/2014") #You need to run this if and only if you haven't run the setwd() line above
+system("convert -delay 20 *.png animated_count_down.gif")
+dev.off()
+# Remove png files
+#file.remove(list.files(pattern=".png"))
+```
+
+```{r}
+#simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
+start = as.Date("2018-06-04")
+stop = as.Date("2018-10-22")
+inputs_2018 <- inputs_year(start,stop)
+today <- start
+dir.create("../DO_modeling_figures/3Mar20/2018")
+setwd("../DO_modeling_figures/3Mar20/2018")
+png(file="example%02d.png", width=480, height=480)
+while(today < stop){
+  est2018 <- run_do_hindcast(inputs_2018, obs, today)
+  plot_o2(est2018, today, start, stop)
+  today <- today+7
+}
+# Use image magick
+#setwd("../DO_modeling_figures/3Mar20/2018") #You need to run this if and only if you haven't run the setwd() line above
+system("convert -delay 30 *.png animated_count_down.gif")
+dev.off()
+# Remove png files
+#file.remove(list.files(pattern=".png"))
+```
+
+```{r}
+start = as.Date("2013-04-30")
+stop = as.Date("2013-08-08")
+start = as.Date("2014-06-02")
+stop = as.Date("2014-10-15")
+start = as.Date("2015-06-08")
+stop = as.Date("2015-09-28")
+start = as.Date("2016-06-01")
+stop = as.Date("2016-10-07")
+start = as.Date("2017-06-28")
+stop = as.Date("2017-07-12")
+start = as.Date("2018-06-04")
+stop = as.Date("2018-10-22")
+start = as.Date("2019-06-03")
+stop = as.Date("2019-10-30")
+```
+
+
+Just for troubleshooting:
+```{r}
+n_en = n_en
+start = start
+stop = stop
+time_step = "days"
+obs_file = obs
+driver_file = model_inputs
+n_states_est = 1
+n_params_est = 4
+n_params_obs = 0
+n_drivers = 6
+parm_init = parms
+obs_cv = obs_cv
+param_cv = param_cv
+driver_cv = driver_cv
+init_cond_cv = init_cond_cv
+```
+
+Notes for next steps: 
+Informed priors for parameters (there are points where r20 = -20)
+Make it so that the kalman filter only runs when there's an observation -- the idea of comparing it to 0 seems v sketch???
+Quantify uncertainty at each time step
+Run for other years
