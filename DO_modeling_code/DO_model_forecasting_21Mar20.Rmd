@@ -18,6 +18,7 @@ library(knitr)
 source('EnKF_functions_21Mar20.R')
 library(magick)
 library(animation)
+library(Metrics)
 ```
 
 Created 20 March 20 to convert my model to a forecasting framework
@@ -39,6 +40,7 @@ First steps:
   - So this would be best with a final spreadsheet where there's a column for predictions a certain number of days out and observations on that day
   - TODAY PLUS1 PLUS1_OBS PLUS2 PLUS2_OBS, etc
   - Plot of rmse vs the number of days away, colors for the year
+- Should the model only run when you have a new observation?
 - Start comparing different models
 
 
@@ -255,70 +257,116 @@ plot_param = function(est_out,num,name = "Parameter value"){
   }
   lines(mean_param_est ~ est_out$dates, col = 'black', lwd = 2)
 }
+
+createResultsDF <- function(start, stop){
+  days <- as.numeric(difftime(stop,start, units = "days"))
+  rows <- floor(days/run_space)+1
+  cols <- n_days*2+1
+  results <- matrix(NA, nrow = rows, ncol = cols)
+  n <- rep(seq(1,n_days))
+  type <- rep(c("_pred","_obs"),each = n_days)
+  col_names <- c("TODAY",paste("PLUS",n,type,sep = ""))
+  colnames(results)<-col_names
+  return(results)
+}
+
+extendObsDF <- function(start,stop,obs){
+  dates = data.frame(seq(start,stop,by = "days"))
+  colnames(dates) <- "datetime"
+  obs_allDates = dates %>%
+    left_join(obs)
+  return(obs_allDates)
+}
+
+createRmseDF <- function(n_days,results){
+  n <- seq(1,n_days)
+  val <- rep(NA,n_days)
+  class(val) <- "numeric"
+  rmse_2016 <- data.frame(n,val)
+  results_2016 <- as.data.frame(results_2016)
+  for(i in seq(1:n_days)){
+    predicted <- results_2016[i+1]
+    observed <- results_2016[i+1+n_days]
+    rmse_2016$val[rmse_2016$n == i] <- rmse(observed[!is.na(observed)], predicted[!is.na(observed)])
+  }
+  rmse_2016
+}
+
+runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE){
+  #Create results dataframe
+  results<- createResultsDF(start, stop)
+  #Create obs file with all dates (filling in NAs)
+  obs_allDates <- extendObsDF(start,stop,obs)
+  #Create inputs (drivers) for this year
+  inputs_thisYear <- inputs_year(start,stop)
+  today <- start
+  if(gif == TRUE){
+    dateRun <- format(Sys.Date(),"%d%b%y")
+    year <- year(start)
+    dir1 <- paste("../DO_modeling_figures",dateRun,sep = "/")
+    dir2<-paste(dir1,year,sep = "/")
+    dir.create(dir1)
+    dir.create(dir2)
+    setwd(dir2)
+    png(file="forecast%02d.png", width=480, height=480)
+  }
+  while(today < stop){
+    row<- as.numeric(difftime(today,start))/run_space+1
+    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days)
+    mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
+    obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
+    if(length(obs_toAdd)<n_days){
+      obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))
+    }
+    results[row,(2+n_days):cols]<- obs_toAdd
+    results[row,2:(1+n_days)]<-tail(mean_o2_est, n = n_days)
+    results[row,1]<-today
+    if(gif == TRUE){
+      plot_o2(est_thisYear, today, start, stop)
+    }
+    today <- today+run_space
+  }
+  if (gif == TRUE){
+    system("convert -delay 30 *.png animated_count_down.gif")
+    dev.off()
+    # Remove png files
+    if(remove == TRUE){
+      file.remove(list.files(pattern=".png"))
+    }
+  }
+  return(results)
+}
 ```
 
 ```{r}
-#simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
+run_space <- 7 #Number of days between runs of the model
+n_days <- 14 #Forecast horizon
 start = as.Date("2014-06-02")
 stop = as.Date("2014-10-15")
-inputs_2014 <- inputs_year(start,stop)
-today <- start
-dir.create("../DO_modeling_figures/3Mar20/2014")
-setwd("../DO_modeling_figures/3Mar20/2014")
-png(file="example%02d.png", width=480, height=480)
-while(today < stop){
-  est2014 <- run_do_hindcast(inputs_2014, obs, today)
-  plot_o2(est2014, today, start, stop)
-  today <- today+7
-}
-# Use image magick
-#setwd("../DO_modeling_figures/3Mar20/2014") #You need to run this if and only if you haven't run the setwd() line above
-system("convert -delay 30 *.png animated_count_down.gif")
-dev.off()
-# Remove png files
-#file.remove(list.files(pattern=".png"))
+
+
+#Run forecast!
+results_2014 <- runForecasts(start, stop, n_days, run_space, obs)
+
+# Calculate rmse for all days
+rmse_2014 <- createRmseDF(n_days, results_2014)
 ```
 
 ```{r}
-#simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
-run_space <- 7
-n_days <- 14
+run_space <- 7 #Number of days between runs of the model
+n_days <- 14 #Forecast horizon
 start = as.Date("2016-06-01")
 stop = as.Date("2016-10-07")
 
-#Create results dataframe
-days <- as.numeric(difftime(stop,start, units = "days"))
-rows <- floor(days/run_space)
-cols <- n_days*2+1
-results_2016 <- matrix(NA, nrow = rows, ncol = cols)
-n <- rep(seq(1,n_days),each = 2)
-type <- rep(c("_pred","_obs"),each = n_days)
-col_names <- c("TODAY",paste("PLUS",n,type,sep = ""))
-colnames(results_2016)<-col_names
+#Run forecast!
+results_2016 <- runForecasts(start, stop, n_days, run_space, obs)
 
-inputs_2016 <- inputs_year(start,stop)
-today <- start
-dir.create("../DO_modeling_figures/22Mar20/2016")
-setwd("../DO_modeling_figures/22Mar20/2016")
-png(file="example%02d.png", width=480, height=480)
-while(today < stop){
-  row<- as.numeric(difftime(today,start))/run_space+1
-  est2016 <- run_do_hindcast(inputs_2016, obs, today, n_days)
-  mean_o2_est = apply(est2016$Y[1,,], 1, FUN = mean)
-  results_2016[row,2:(1+n_days)]<-tail(mean_o2_est, n = n_days)
-  plot_o2(est2016, today, start, stop)
-  today <- today+run_space
-}
-# Use image magick
-#setwd("../DO_modeling_figures/3Mar20/2016") #You need to run this if and only if you haven't run the setwd() line above
-system("convert -delay 30 *.png animated_count_down.gif")
-dev.off()
-# Remove png files
-#file.remove(list.files(pattern=".png"))
+# Calculate rmse for all days
+rmse_2016 <- createRmseDF(n_days, results_2016)
 
 ```
 
-SKIP
+SKIP: this would plot parameter values over 
 #```{r}
 plot(inputs_2016$Date,inputs_2016$Chla, )
 
@@ -342,49 +390,32 @@ while(today < stop){
 #```
 
 ```{r}
-#simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
 start = as.Date("2017-06-28")
 stop = as.Date("2017-07-12")
-inputs_2017 <- inputs_year(start,stop)
-today <- start
-dir.create("../DO_modeling_figures/3Mar20/2017")
-setwd("../DO_modeling_figures/3Mar20/2017")
-png(file="example%02d.png", width=480, height=480)
-while(today < stop){
-  est2017 <- run_do_hindcast(inputs_2017, obs, today)
-  plot_o2(est2017, today, start, stop)
-  today <- today+1
-}
-# Use image magick
-#setwd("../DO_modeling_figures/3Mar20/2014") #You need to run this if and only if you haven't run the setwd() line above
-system("convert -delay 20 *.png animated_count_down.gif")
-dev.off()
-# Remove png files
-#file.remove(list.files(pattern=".png"))
+run_space <- 7 #Number of days between runs of the model
+n_days <- 14 #Forecast horizon
+
+#Run forecast
+results_2017 <- runForecasts(start, stop, n_days, run_space, obs)
+
+# Calculate rmse for all days
+rmse_2017 <- createRmseDF(n_days, results_2017)
 ```
 
 ```{r}
-#simulation_time <- as.numeric(difftime(today+n_days, start, unit = "days")+1)
 start = as.Date("2018-06-04")
 stop = as.Date("2018-10-22")
-inputs_2018 <- inputs_year(start,stop)
-today <- start
-dir.create("../DO_modeling_figures/3Mar20/2018")
-setwd("../DO_modeling_figures/3Mar20/2018")
-png(file="example%02d.png", width=480, height=480)
-while(today < stop){
-  est2018 <- run_do_hindcast(inputs_2018, obs, today)
-  plot_o2(est2018, today, start, stop)
-  today <- today+7
-}
-# Use image magick
-#setwd("../DO_modeling_figures/3Mar20/2018") #You need to run this if and only if you haven't run the setwd() line above
-system("convert -delay 30 *.png animated_count_down.gif")
-dev.off()
-# Remove png files
-#file.remove(list.files(pattern=".png"))
+run_space <- 7 #Number of days between runs of the model
+n_days <- 14 #Forecast horizon
+
+#Run forecast
+results_2018 <- runForecasts(start, stop, n_days, run_space, obs)
+
+# Calculate rmse for all days
+rmse_2018 <- createRmseDF(n_days, results_2018)
 ```
 
+Saving the best dates for the start and end of each season
 ```{r}
 start = as.Date("2013-04-30")
 stop = as.Date("2013-08-08")
