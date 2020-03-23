@@ -23,11 +23,17 @@ library(Metrics)
 
 Created 20 March 20 to convert my model to a forecasting framework
 - NOTE: got rid of the flexible hypo volume. I think that's what was destroying 2016
+- NOTE: I am saying data collected on the day of the forecast DOES get incorporated into the forecast
 
 To do:
 - ***Start comparing different models***
+  - Just temp
+  - Just oxygen
+  - Just SSS
+- READ about forecast evaluation
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
-- Should the model only run when you have a new observation?
+
+Should the model only run when you have a new observation?
   - Yes. Drivers aren't changing. There's no point in rerunning the forecast, and this will lead to more noise in the RMSE plot
   - Okay but it does pretty well and managers could potentially use it to predict further into the future even with out a new observation
   - Not a huge priority. Look into best practices for how often the model should be run. Sticking with an even time step for now for simplicity. 
@@ -41,6 +47,8 @@ Done:
 - Calculate RMSE a certain number of days out DONE
 - Plot of rmse vs the number of days away, colors for the year DONE
 - Archive forecasts DONE
+- Create persistence forecast DONE
+- Compare RMSE with the persistence forecast to the actual model
 
 
 ## Model
@@ -56,12 +64,10 @@ O2_model <- function(times, states, parms, inputs){
   theta <- as.numeric(parms[2])
   ko2 <- as.numeric(parms[3])
   sss_scalar <- as.numeric(parms[4])
-  k_chla <- as.numeric(parms[5])
   
   #INPUT
   SSS <- inputs[1]
   temp <- inputs[2]
-  chla <- inputs[3]
   
   #CALCULATIONS
   R = R20*theta^(temp-20)*O2_mgL/(O2_mgL+ko2)
@@ -294,7 +300,7 @@ createRmseDF <- function(n_days,results){
 runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30){
   #Create results dataframe
   results<- createResultsDF(start, stop)
-  #Create obs file with all dates (filling in NAs)
+  #Create obs file with all dates (filling dates for NAs)
   obs_allDates <- extendObsDF(start,stop,obs)
   #Create inputs (drivers) for this year
   inputs_thisYear <- inputs_year(start,stop)
@@ -346,6 +352,31 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   }
   return(results)
 }
+
+
+persistenceForecast <- function(start,stop,n_days,run_space,obs){
+  #Create results dataframe
+  results<- createResultsDF(start, stop)
+  #Create obs file with all dates (filling dates for NAs)
+  obs_allDates <- extendObsDF(start,stop,obs)
+  today <- start
+  while(today < stop){
+    row<- as.numeric(difftime(today,start))/run_space+1
+    cols <- n_days*2+1
+    current_obs <- obs[obs$datetime<=today,]
+    most_recent_obs <- current_obs$O2_mgL[which.max(current_obs$datetime)]
+    forecast <- rep(most_recent_obs,n_days)
+    obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
+    if(length(obs_toAdd)<n_days){
+      obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))
+    }
+    results[row,(2+n_days):cols]<- obs_toAdd
+    results[row,2:(1+n_days)]<-forecast
+    results[row,1]<-today
+    today <- today+run_space
+  }
+  results 
+}
 ```
 
 
@@ -380,8 +411,7 @@ rmse_2017 <- createRmseDF(n_days, results_2017)
 #2018
 start = as.Date("2018-06-04")
 stop = as.Date("2018-10-22")
-run_space <- 7 #Number of days between runs of the model
-results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 10)
+results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5)
 rmse_2018 <- createRmseDF(n_days, results_2018)
 
 rmse_total <- rmse_2014%>%
@@ -389,14 +419,76 @@ rmse_total <- rmse_2014%>%
   full_join(rmse_2016 %>% mutate (Year = 2016))%>%
   full_join(rmse_2017 %>% mutate (Year = 2017))%>%
   full_join(rmse_2018 %>% mutate (Year = 2018))
+write.csv(rmse_total,"../DO_modeling_results/rmse_23Mar20.csv")
 
 rmse_total%>%
+  filter(Year!=2017)%>%
   ggplot(aes(x = n, y = val, col = as.factor(Year)))+
   geom_point()+
   ylab("RMSE")+
   xlab("Days past forecast generation")+
   labs(color = "Year")
 ```
+
+
+```{r}
+run_space <- 1 #Number of days between runs of the model
+n_days <- 14 #Forecast horizon
+
+#2014
+start = as.Date("2014-06-02")
+stop = as.Date("2014-10-15")
+persist_2014 <- persistenceForecast(start, stop, n_days, run_space, obs)
+rmse_persist_2014 <- createRmseDF(n_days, persist_2014)
+
+#2016
+start = as.Date("2016-06-01")
+stop = as.Date("2016-10-07")
+persist_2016 <- persistenceForecast(start, stop, n_days, run_space, obs)
+rmse_persist_2016 <- createRmseDF(n_days, persist_2016)
+
+#2017
+start = as.Date("2017-06-28")
+stop = as.Date("2017-07-12")
+persist_2017 <- persistenceForecast(start, stop, n_days, run_space, obs)
+rmse_persist_2017 <- createRmseDF(n_days, persist_2017)
+
+#2018
+start = as.Date("2018-06-04")
+stop = as.Date("2018-10-22")
+persist_2018 <- persistenceForecast(start, stop, n_days, run_space, obs)
+rmse_persist_2018 <- createRmseDF(n_days, persist_2018)
+
+rmse_persist_total <- rmse_persist_2014%>%
+  mutate(Year = 2014)%>%
+  full_join(rmse_persist_2016 %>% mutate (Year = 2016))%>%
+  full_join(rmse_persist_2017 %>% mutate (Year = 2017))%>%
+  full_join(rmse_persist_2018 %>% mutate (Year = 2018))
+write.csv(rmse_persist_total,"../DO_modeling_results/rmse_persist_23Mar20.csv")
+
+rmse_persist_total%>%
+  filter(Year!=2017)%>%
+  ggplot(aes(x = n, y = val, col = as.factor(Year)))+
+  geom_point()+
+  ylab("RMSE")+
+  xlab("Days past forecast generation")+
+  labs(color = "Year")
+```
+
+```{r}
+rmse_comb <- rmse_persist_total%>%
+  mutate(Model = "persistance")%>%
+  full_join(rmse_total %>% mutate(Model = "forecast"))
+
+rmse_comb %>%
+  filter(Year!=2017)%>%
+  ggplot(aes(x = n, y = val, color = Model, shape = as.factor(Year)))+
+  geom_point()+
+  ylab("RMSE")+
+  xlab("Days past forecast generation")+
+  labs(shape = "Year")
+```
+
 
 SKIP: this would plot parameter values over 
 #```{r}
