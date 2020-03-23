@@ -22,26 +22,22 @@ library(Metrics)
 ```
 
 Created 20 March 20 to convert my model to a forecasting framework
-What I want is 14 days of predictions starting from the date of the forecast
-- Before those 14 days it can work just as normal, assimilating data, etc
-- I do need an estimation of uncertainty at all of those points
-- Do I run this every day? Seem like there's not really a point given that there won't be any new driver data/data assimilation
-- Maybe every week for now?
 - NOTE: got rid of the flexible hypo volume. I think that's what was destroying 2016
 
-First steps:
+Done:
 - Set aside some data as test (2013, 2015, 2019) and some as training (2014, 2016, 2017, 2018): DONE
 - Create one forecast half way through 2014: DONE
 - Create forecasts for all of 2014: DONE
 - Create forecasts for all training years: DONE
 - Set this up to archive everything in github: DONE!!
-- Need a way of quantifying how good the model is
-  - Calculate RMSE a certain number of days out
-  - So this would be best with a final spreadsheet where there's a column for predictions a certain number of days out and observations on that day
-  - TODAY PLUS1 PLUS1_OBS PLUS2 PLUS2_OBS, etc
-  - Plot of rmse vs the number of days away, colors for the year
+- Calculate RMSE a certain number of days out DONE
+- Plot of rmse vs the number of days away, colors for the year DONE
+
+To do:
 - Should the model only run when you have a new observation?
+  - Yes. Drivers aren't changing. There's no point in rerunning the forecast, and this will lead to more noise in the RMSE plot
 - Start comparing different models
+- Archive forecasts
 
 
 ## Model
@@ -282,17 +278,17 @@ createRmseDF <- function(n_days,results){
   n <- seq(1,n_days)
   val <- rep(NA,n_days)
   class(val) <- "numeric"
-  rmse_2016 <- data.frame(n,val)
-  results_2016 <- as.data.frame(results_2016)
+  rmse_thisYear <- data.frame(n,val)
+  results <- as.data.frame(results)
   for(i in seq(1:n_days)){
-    predicted <- results_2016[i+1]
-    observed <- results_2016[i+1+n_days]
-    rmse_2016$val[rmse_2016$n == i] <- rmse(observed[!is.na(observed)], predicted[!is.na(observed)])
+    predicted <- results[i+1]
+    observed <- results[i+1+n_days]
+    rmse_thisYear$val[rmse_thisYear$n == i] <- rmse(observed[!is.na(observed)], predicted[!is.na(observed)])
   }
-  rmse_2016
+  rmse_thisYear
 }
 
-runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE){
+runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30){
   #Create results dataframe
   results<- createResultsDF(start, stop)
   #Create obs file with all dates (filling in NAs)
@@ -324,10 +320,23 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
     if(gif == TRUE){
       plot_o2(est_thisYear, today, start, stop)
     }
+    if(archiveForecasts == TRUE){
+      dateRun <- format(Sys.Date(),"%d%b%y")
+      year <- year(start)
+      dir1 <- paste("../Archived_forecasts",dateRun,sep = "/")
+      dir2<-paste(dir1,year,sep = "/")
+      dir.create(dir1)
+      dir.create(dir2)
+      if(gif == TRUE){
+        dir2 <- paste("../../",dir2,sep="")
+      }
+      write.csv(est_thisYear$Y[1,,],paste(dir2,"/",format(today,"%d%b%y"),".csv",sep = ""))
+    }
     today <- today+run_space
   }
   if (gif == TRUE){
-    system("convert -delay 30 *.png animated_count_down.gif")
+    convert <- paste("convert -delay ",delay," *.png animated_count_down.gif", sep = "")
+    system(convert)
     dev.off()
     # Remove png files
     if(remove == TRUE){
@@ -338,32 +347,54 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
 }
 ```
 
+
+
+
+
+
+
+Run forecasts!
 ```{r}
 run_space <- 7 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
+
+#2014
 start = as.Date("2014-06-02")
 stop = as.Date("2014-10-15")
+results_2014 <- runForecasts(start, stop, n_days, run_space, obs, archiveForecasts = TRUE)
+rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
 
-
-#Run forecast!
-results_2014 <- runForecasts(start, stop, n_days, run_space, obs)
-
-# Calculate rmse for all days
-rmse_2014 <- createRmseDF(n_days, results_2014)
-```
-
-```{r}
-run_space <- 7 #Number of days between runs of the model
-n_days <- 14 #Forecast horizon
+#2016
 start = as.Date("2016-06-01")
 stop = as.Date("2016-10-07")
-
-#Run forecast!
 results_2016 <- runForecasts(start, stop, n_days, run_space, obs)
-
-# Calculate rmse for all days
 rmse_2016 <- createRmseDF(n_days, results_2016)
 
+#2017
+start = as.Date("2017-06-28")
+stop = as.Date("2017-07-12")
+results_2017 <- runForecasts(start, stop, n_days, run_space, obs)
+rmse_2017 <- createRmseDF(n_days, results_2017)
+
+#2018
+start = as.Date("2018-06-04")
+stop = as.Date("2018-10-22")
+run_space <- 7 #Number of days between runs of the model
+results_2018 <- runForecasts(start, stop, n_days, run_space, obs)
+rmse_2018 <- createRmseDF(n_days, results_2018)
+
+rmse_total <- rmse_2014%>%
+  mutate(Year = 2014)%>%
+  full_join(rmse_2016 %>% mutate (Year = 2016))%>%
+  full_join(rmse_2017 %>% mutate (Year = 2017))%>%
+  full_join(rmse_2018 %>% mutate (Year = 2018))
+
+rmse_total%>%
+  ggplot(aes(x = n, y = val, col = as.factor(Year)))+
+  geom_point()+
+  ylab("RMSE")+
+  xlab("Days past forecast generation")+
+  labs(color = "Year")
 ```
 
 SKIP: this would plot parameter values over 
@@ -388,32 +419,6 @@ while(today < stop){
   today <- today+2
 }
 #```
-
-```{r}
-start = as.Date("2017-06-28")
-stop = as.Date("2017-07-12")
-run_space <- 7 #Number of days between runs of the model
-n_days <- 14 #Forecast horizon
-
-#Run forecast
-results_2017 <- runForecasts(start, stop, n_days, run_space, obs)
-
-# Calculate rmse for all days
-rmse_2017 <- createRmseDF(n_days, results_2017)
-```
-
-```{r}
-start = as.Date("2018-06-04")
-stop = as.Date("2018-10-22")
-run_space <- 7 #Number of days between runs of the model
-n_days <- 14 #Forecast horizon
-
-#Run forecast
-results_2018 <- runForecasts(start, stop, n_days, run_space, obs)
-
-# Calculate rmse for all days
-rmse_2018 <- createRmseDF(n_days, results_2018)
-```
 
 Saving the best dates for the start and end of each season
 ```{r}
