@@ -220,7 +220,8 @@ EnKF = function(n_en = 100,
                 obs_cv,
                 param_cv,
                 driver_cv,
-                init_cond_cv){
+                init_cond_cv,
+                model){
   
   
   n_en = n_en
@@ -295,7 +296,7 @@ EnKF = function(n_en = 100,
     for(n in 1:n_en){
       
       # run model; 
-      model_output_temp = O2_model(times = t,
+      model_output_temp = model(times = t,
                               states = Y[1, t-1, n],
                               parms = Y[2:5, t-1, n],
                               inputs = drivers[t-1,,n])

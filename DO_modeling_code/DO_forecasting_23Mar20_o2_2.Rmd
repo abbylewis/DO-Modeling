@@ -21,34 +21,7 @@ library(animation)
 library(Metrics)
 ```
 
-Created 20 March 20 to convert my model to a forecasting framework
-- NOTE: got rid of the flexible hypo volume. I think that's what was destroying 2016
-- NOTE: I am saying data collected on the day of the forecast DOES get incorporated into the forecast
-
-To do:
-- ***Start comparing different models***
-  - Just temp
-  - Just oxygen
-  - Just SSS
-- READ about forecast evaluation
-- Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
-
-Should the model only run when you have a new observation?
-  - Yes. Drivers aren't changing. There's no point in rerunning the forecast, and this will lead to more noise in the RMSE plot
-  - Okay but it does pretty well and managers could potentially use it to predict further into the future even with out a new observation
-  - Not a huge priority. Look into best practices for how often the model should be run. Sticking with an even time step for now for simplicity. 
-
-Done:
-- Set aside some data as test (2013, 2015, 2019) and some as training (2014, 2016, 2017, 2018): DONE
-- Create one forecast half way through 2014: DONE
-- Create forecasts for all of 2014: DONE
-- Create forecasts for all training years: DONE
-- Set this up to archive everything in github: DONE!!
-- Calculate RMSE a certain number of days out DONE
-- Plot of rmse vs the number of days away, colors for the year DONE
-- Archive forecasts DONE
-- Create persistence forecast DONE
-- Compare RMSE with the persistence forecast to the actual model
+NOTE 23 Mar this is WRONG!!! I am averaging of each run of the model!
 
 
 ## Model

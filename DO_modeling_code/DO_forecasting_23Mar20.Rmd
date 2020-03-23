@@ -24,12 +24,11 @@ library(Metrics)
 Created 20 March 20 to convert my model to a forecasting framework
 - NOTE: got rid of the flexible hypo volume. I think that's what was destroying 2016
 - NOTE: I am saying data collected on the day of the forecast DOES get incorporated into the forecast
+- This one script can do normal, temp, o2, and persistence forecasts
 
 To do:
-- ***Start comparing different models***
-  - Just temp
-  - Just oxygen
-  - Just SSS
+- Just SSS model
+- Compare models on a graph
 - READ about forecast evaluation
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 
@@ -48,7 +47,10 @@ Done:
 - Plot of rmse vs the number of days away, colors for the year DONE
 - Archive forecasts DONE
 - Create persistence forecast DONE
-- Compare RMSE with the persistence forecast to the actual model
+- Compare RMSE with the persistence forecast to the actual model DONE
+- Create forecast with just temp DONE
+- Create forecast with just O2 DONE
+- Add temp and o2 models to this script DONE
 
 
 ## Model
@@ -83,9 +85,40 @@ O2_model <- function(times, states, parms, inputs){
   #RETURN A LIST OF THE DERIVATIVES
   return(list(c(dO2_mgLdt), c(parms)))
 }
+
+no_O2_model <- function(times, states, parms, inputs){
+  
+  #STATES 
+  state_O2 <- states[1]
+
+  #PARMS 
+  R20 <- as.numeric(parms[1])
+  theta <- as.numeric(parms[2])
+  ko2 <- as.numeric(parms[3])
+  sss_scalar <- as.numeric(parms[4])
+  
+  #INPUT
+  SSS <- inputs[1]
+  temp <- inputs[2]
+  O2_mgL <- inputs[3]
+  
+  #CALCULATIONS
+  R = R20*theta^(temp-20)*O2_mgL/(O2_mgL+ko2)
+  scalar = 1
+  if(SSS>0){
+    scalar = sss_scalar
+  }
+  OD = R*scalar
+
+  #DERIVATIVE
+  dO2_mgLdt <- SSS-OD
+
+  #RETURN A LIST OF THE DERIVATIVES
+  return(list(c(dO2_mgLdt), c(parms)))
+}
 ```
 
-## Parameters
+## Parameters, CV, number of ensembles
 ```{r}
 parms <- c(
   R20 = .7, #mg/L/day
@@ -93,13 +126,9 @@ parms <- c(
   ko2 = 1, #mg/L
   sss_scalar = 3
 )
-```
 
-```{r} 
 # From GLEON workshop 
 # I made all of these up more or less randomly. Not sure how I should have come up with them
-
-
 n_en = 100 # number of ensembles 
 # coefficient of variation (CV) as a representation of uncertainty 
 param_cv = c(R20 = .1,
@@ -107,32 +136,10 @@ param_cv = c(R20 = .1,
              ko2 = .1,
              sss_scalar = .2)
 driver_cv = c(SSS = .2,
-    temp = .2) # Coefficient of variation of driver data 
+    temp = .2,
+    o2_mgL = 0) # Coefficient of variation of driver data 
 init_cond_cv = .1
 obs_cv = 0.05
-```
-
-```{r}
-#Create observations dataframe
-  CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
-  CTD = CTD%>%
-    filter(hypoVolume>0,
-           !is.na(Conc))%>%
-    mutate(Date = as.Date(Date))
-  obs <- CTD %>%
-    filter(!is.na(Conc))%>%
-    select(Date, Conc)%>%
-    rename(datetime = Date)%>%
-    group_by(datetime)%>%
-    summarize(O2_mgL = mean(Conc))
-  CTD$hypoVolume<-mean(CTD$hypoVolume, na.rm = TRUE)
-  
-  mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
-  median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
-  
-#Create driver data frame (called model_inputs)
-  SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
-  SSS$time <- as.Date(SSS$time)
 ```
 
 
@@ -158,9 +165,10 @@ inputs_year<- function(start, stop){
               scfm = mean(scfm),
               Chla = mean(Chla_ugL),
               SA = mean(SA_m2))
+  inputs
 }
 
-run_do_hindcast <- function(inputs, obs, today, n_days = 14){
+run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal"){
   obs = obs%>%
     filter(datetime<=today)
   inputs = inputs%>%
@@ -181,17 +189,16 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14){
   #Assemble driver data
   model_inputs <- list(datetime = inputs$Date,
     SSS = inputs$SSS_add_conc,
-    temp = inputs$Temp)
+    temp = inputs$Temp,
+    O2_mgL = inputs$Conc)
   model_inputs<- data.frame(model_inputs)
   
   #Set initial conditions
   yini <- c(
     O2_mgL = inputs$Conc[inputs$Date == start]
   )
-
-  
-  #Run EnKF
-  est_out = EnKF(n_en = n_en, 
+  if(model_name == "temp"){
+      est_out = EnKF(n_en = n_en, 
            start = start,
            stop = min(stop, today+n_days),
            time_step = "days",
@@ -200,12 +207,32 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14){
            n_states_est = 1,
            n_params_est = 4,
            n_params_obs = 0,
-           n_drivers = 2,
+           n_drivers = 3,
            parm_init = parms, 
            obs_cv = obs_cv,
            param_cv = param_cv,
            driver_cv = driver_cv, 
-           init_cond_cv = init_cond_cv)
+           init_cond_cv = init_cond_cv,
+           model = no_O2_model)
+  }else{
+    #Run EnKF
+    est_out = EnKF(n_en = n_en, 
+             start = start,
+             stop = min(stop, today+n_days),
+             time_step = "days",
+             obs_file = obs, 
+             driver_file = model_inputs, 
+             n_states_est = 1,
+             n_params_est = 4,
+             n_params_obs = 0,
+             n_drivers = 2,
+             parm_init = parms, 
+             obs_cv = obs_cv,
+             param_cv = param_cv,
+             driver_cv = driver_cv, 
+             init_cond_cv = init_cond_cv,
+             model = O2_model)
+  }
   return(est_out)
 }
 
@@ -297,19 +324,26 @@ createRmseDF <- function(n_days,results){
   rmse_thisYear
 }
 
-runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30){
+runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30, model_name = "full"){
+  #Model types = full (""), temp ("_temp"), o2 ("_o2")
+  if(model_name == "full"){model = ""}
+  if(model_name == "temp"){model = "_temp"}
+  if(model_name == "o2"){model = "_o2"}
+  
   #Create results dataframe
   results<- createResultsDF(start, stop)
   #Create obs file with all dates (filling dates for NAs)
   obs_allDates <- extendObsDF(start,stop,obs)
   #Create inputs (drivers) for this year
   inputs_thisYear <- inputs_year(start,stop)
+  if(model_name == "temp"){inputs_thisYear$Conc <- avg_o2}
+  if(model_name == "o2"){inputs_thisYear$Temp <- avg_temp}
   today <- start
   if(gif == TRUE){
     dateRun <- format(Sys.Date(),"%d%b%y")
     year <- year(start)
     dir1 <- paste("../DO_modeling_figures",dateRun,sep = "/")
-    dir2<-paste(dir1,year,sep = "/")
+    dir2<-paste(dir1,"/",year,model,sep = "")
     dir.create(dir1)
     dir.create(dir2)
     #setwd(dir2)
@@ -318,7 +352,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   while(today < stop){
     row<- as.numeric(difftime(today,start))/run_space+1
     cols <- n_days*2+1
-    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days)
+    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name)
     mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
     obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
     if(length(obs_toAdd)<n_days){
@@ -334,7 +368,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
       dateRun <- format(Sys.Date(),"%d%b%y")
       year <- year(start)
       dir1.1 <- paste("../Archived_forecasts",dateRun,sep = "/")
-      dir2.1<-paste(dir1.1,year,sep = "/")
+      dir2.1<-paste(dir1.1,"/",year,model,sep = "")
       dir.create(dir1.1)
       dir.create(dir2.1)
       write.csv(est_thisYear$Y[1,,],paste(dir2,"/",format(today,"%d%b%y"),".csv",sep = ""))
@@ -342,7 +376,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
     today <- today+run_space
   }
   if (gif == TRUE){
-    convert <- paste("convert -delay ",delay," ",dir2,"/forecast*.png ",dir2,"/animated_count_down.gif", sep = "")
+    convert <- paste("convert -delay ",delay," ",dir2,"/forecast*.png ",dir2,"/animated_forecast.gif", sep = "")
     system(convert)
     dev.off()
     # Remove png files
@@ -380,6 +414,66 @@ persistenceForecast <- function(start,stop,n_days,run_space,obs){
 ```
 
 
+```{r}
+#Create observations dataframe
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+CTD = CTD%>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date))
+obs <- CTD %>%
+  filter(!is.na(Conc))%>%
+  select(Date, Conc)%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(O2_mgL = mean(Conc))
+CTD$hypoVolume<-mean(CTD$hypoVolume, na.rm = TRUE)
+
+mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
+median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
+
+#Create driver data frame (called model_inputs)
+SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+SSS$time <- as.Date(SSS$time)
+  
+start = as.Date(c("2013-04-30","2014-06-02","2015-06-08","2016-06-01","2017-06-28","2018-06-04","2019-06-03"))
+stop = as.Date(c("2013-08-08","2014-10-15","2015-09-28","2016-10-07","2017-07-12","2018-10-22","2019-10-30"))
+dates_init <- data_frame(start,stop)
+dates <- dates_init %>%
+  mutate(year = year(start))%>%
+  select(year,start,stop)
+
+allDays<-data.frame(seq(min(start),max(stop),by = "days"))
+colnames(allDays) <- "Date"
+inputs = allDays %>%
+  left_join(CTD %>%
+              dplyr::select(Date,Conc,Temp,hypoVolume,thermo_depth,Chla_ugL,SA_m2), by = "Date")%>%
+  left_join(SSS %>% 
+              dplyr::select(time, scfm), by = c("Date"="time"))%>%
+  arrange(Date)
+inputs = inputs%>%
+  group_by(Date)%>%
+  summarise(Conc = mean(Conc),
+            Temp = mean(Temp),
+            hypoVolume = mean(hypoVolume),
+            thermo_depth = mean(thermo_depth),
+            scfm = mean(scfm),
+            Chla = mean(Chla_ugL),
+            SA = mean(SA_m2))
+inputs_inRange <- inputs%>%
+  mutate(year = year(Date))%>%
+  left_join(dates)%>%
+  filter(Date>=start,
+         Date<=stop)%>%
+  select(-start,-stop,-year)
+
+toCalcAvg <- inputs_inRange%>%
+  fill(Conc,Temp,hypoVolume,thermo_depth,Chla,SA)
+avg_temp <- mean(toCalcAvg$Temp)
+avg_o2 <- mean(toCalcAvg$Conc)
+```
+
+
 
 
 
@@ -393,7 +487,7 @@ n_days <- 14 #Forecast horizon
 #2014
 start = as.Date("2014-06-02")
 stop = as.Date("2014-10-15")
-results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5)
+results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = "temp")
 rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
 
 #2016

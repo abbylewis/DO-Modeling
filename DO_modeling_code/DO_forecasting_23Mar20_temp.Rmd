@@ -23,6 +23,8 @@ library(Metrics)
 
 Created 23 March 20. Making a forecast that is not sensitive to oxygen
 
+NOTE 23 Mar this is WRONG!!! I am averaging of each run of the model!
+
 
 ## Model
 ```{r}
