@@ -32,12 +32,16 @@ Done:
 - Set this up to archive everything in github: DONE!!
 - Calculate RMSE a certain number of days out DONE
 - Plot of rmse vs the number of days away, colors for the year DONE
+- Archive forecasts DONE
 
 To do:
 - Should the model only run when you have a new observation?
   - Yes. Drivers aren't changing. There's no point in rerunning the forecast, and this will lead to more noise in the RMSE plot
+  - Okay but it does pretty well and managers could potentially use it to predict further into the future even with out a model run
 - Start comparing different models
-- Archive forecasts
+- Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
+- Look into best practices for how often the model should be run. Sticking with an even time step for now for simplicity. 
+
 
 
 ## Model
@@ -303,8 +307,8 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
     dir2<-paste(dir1,year,sep = "/")
     dir.create(dir1)
     dir.create(dir2)
-    setwd(dir2)
-    png(file="forecast%02d.png", width=480, height=480)
+    #setwd(dir2)
+    png(file=paste(dir2,"forecast%02d.png",sep=""), width=480, height=480)
   }
   while(today < stop){
     row<- as.numeric(difftime(today,start))/run_space+1
@@ -323,19 +327,16 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
     if(archiveForecasts == TRUE){
       dateRun <- format(Sys.Date(),"%d%b%y")
       year <- year(start)
-      dir1 <- paste("../Archived_forecasts",dateRun,sep = "/")
-      dir2<-paste(dir1,year,sep = "/")
-      dir.create(dir1)
-      dir.create(dir2)
-      if(gif == TRUE){
-        dir2 <- paste("../../",dir2,sep="")
-      }
+      dir1.1 <- paste("../Archived_forecasts",dateRun,sep = "/")
+      dir2.1<-paste(dir1.1,year,sep = "/")
+      dir.create(dir1.1)
+      dir.create(dir2.1)
       write.csv(est_thisYear$Y[1,,],paste(dir2,"/",format(today,"%d%b%y"),".csv",sep = ""))
     }
     today <- today+run_space
   }
   if (gif == TRUE){
-    convert <- paste("convert -delay ",delay," *.png animated_count_down.gif", sep = "")
+    convert <- paste("convert -delay ",delay," *.png ",dir2,"animated_count_down.gif", sep = "")
     system(convert)
     dev.off()
     # Remove png files
@@ -355,13 +356,13 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
 
 Run forecasts!
 ```{r}
-run_space <- 7 #Number of days between runs of the model
+run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
 
 #2014
 start = as.Date("2014-06-02")
 stop = as.Date("2014-10-15")
-results_2014 <- runForecasts(start, stop, n_days, run_space, obs, archiveForecasts = TRUE)
+results_2014 <- runForecasts(start, stop, n_days, run_space, obs)
 rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
 
 #2016
