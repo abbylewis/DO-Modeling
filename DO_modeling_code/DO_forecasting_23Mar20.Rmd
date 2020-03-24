@@ -27,10 +27,12 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, and persistence forecasts
 
 To do:
-- Just SSS model
-- Compare models on a graph
 - READ about forecast evaluation
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
+- What am I doing with training vs test data? Is there a way to automatically get the best parameters? 
+  - Read about what other people are doing
+  - Look at what the parameters are changing to here
+- Look at alternative null models. I really think the most informative in my mind would be someone pointing at teh graph and saying where they think it will go. Is this a thing?
 
 Should the model only run when you have a new observation?
   - Yes. Drivers aren't changing. There's no point in rerunning the forecast, and this will lead to more noise in the RMSE plot
@@ -51,6 +53,8 @@ Done:
 - Create forecast with just temp DONE
 - Create forecast with just O2 DONE
 - Add temp and o2 models to this script DONE
+- Just SSS model DONE
+- Compare models on a graph DONE
 
 
 ## Model
@@ -197,7 +201,7 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
   yini <- c(
     O2_mgL = inputs$Conc[inputs$Date == start]
   )
-  if(model_name == "temp"){
+  if(model_name %in% c("temp","SSS")){
       est_out = EnKF(n_en = n_en, 
            start = start,
            stop = min(stop, today+n_days),
@@ -329,6 +333,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   if(model_name == "full"){model = ""}
   if(model_name == "temp"){model = "_temp"}
   if(model_name == "o2"){model = "_o2"}
+  if(model_name == "SSS"){model = "_sss"}
   
   #Create results dataframe
   results<- createResultsDF(start, stop)
@@ -336,8 +341,8 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   obs_allDates <- extendObsDF(start,stop,obs)
   #Create inputs (drivers) for this year
   inputs_thisYear <- inputs_year(start,stop)
-  if(model_name == "temp"){inputs_thisYear$Conc <- avg_o2}
-  if(model_name == "o2"){inputs_thisYear$Temp <- avg_temp}
+  if(model_name == "temp"|model_name == "SSS"){inputs_thisYear$Conc <- avg_o2}
+  if(model_name == "o2"|model_name == "SSS"){inputs_thisYear$Temp <- avg_temp}
   today <- start
   if(gif == TRUE){
     dateRun <- format(Sys.Date(),"%d%b%y")
@@ -483,29 +488,30 @@ Run forecasts!
 ```{r}
 run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
+model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
 
 #2014
 start = as.Date("2014-06-02")
 stop = as.Date("2014-10-15")
-results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = "temp")
+results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = F)
 rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
 
 #2016
 start = as.Date("2016-06-01")
 stop = as.Date("2016-10-07")
-results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5)
+results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = F)
 rmse_2016 <- createRmseDF(n_days, results_2016)
 
 #2017
 start = as.Date("2017-06-28")
 stop = as.Date("2017-07-12")
-results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30)
+results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30, model_name = model_name, gif = F)
 rmse_2017 <- createRmseDF(n_days, results_2017)
 
 #2018
 start = as.Date("2018-06-04")
 stop = as.Date("2018-10-22")
-results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5)
+results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = F)
 rmse_2018 <- createRmseDF(n_days, results_2018)
 
 rmse_total <- rmse_2014%>%
@@ -513,7 +519,8 @@ rmse_total <- rmse_2014%>%
   full_join(rmse_2016 %>% mutate (Year = 2016))%>%
   full_join(rmse_2017 %>% mutate (Year = 2017))%>%
   full_join(rmse_2018 %>% mutate (Year = 2018))
-write.csv(rmse_total,"../DO_modeling_results/rmse_23Mar20.csv")
+date <- format(Sys.Date(),"%d%b%y")
+write.csv(rmse_total,paste("../DO_modeling_results/rmse_",model_name,"_",date,".csv", sep = ""))
 
 rmse_total%>%
   filter(Year!=2017)%>%
@@ -558,7 +565,8 @@ rmse_persist_total <- rmse_persist_2014%>%
   full_join(rmse_persist_2016 %>% mutate (Year = 2016))%>%
   full_join(rmse_persist_2017 %>% mutate (Year = 2017))%>%
   full_join(rmse_persist_2018 %>% mutate (Year = 2018))
-write.csv(rmse_persist_total,"../DO_modeling_results/rmse_persist_23Mar20.csv")
+date <- format(Sys.Date(),"%d%b%y")
+write.csv(rmse_persist_total,paste("../DO_modeling_results/rmse_persist_",date,".csv", sep = ""))
 
 rmse_persist_total%>%
   filter(Year!=2017)%>%
@@ -581,6 +589,31 @@ rmse_comb %>%
   ylab("RMSE")+
   xlab("Days past forecast generation")+
   labs(shape = "Year")
+```
+```{r}
+temp <- read.csv("../DO_modeling_results/rmse_temp_24Mar20.csv")
+o2 <- read.csv("../DO_modeling_results/rmse_o2_24Mar20.csv")
+full <- read.csv("../DO_modeling_results/rmse_full_24Mar20.csv")
+sss <- read.csv("../DO_modeling_results/rmse_sss_24Mar20.csv")
+persist <- read.csv("../DO_modeling_results/rmse_persist_24Mar20.csv")
+
+rmse_all <- persist%>%
+  mutate(Model = "persistance")%>%
+  full_join(full %>% mutate(Model = "full"))%>%
+  full_join(o2 %>% mutate(Model = "o2"))%>%
+  full_join(temp %>% mutate(Model = "temp"))%>%
+  full_join(sss %>% mutate(Model = "sss"))
+
+date <- format(Sys.Date(),"%d%b%y")
+jpeg(paste("../DO_modeling_figures/",date,"/RMSE_all.jpeg",sep = ""),width = 5, height = 2, unit = "in", res = 300)
+rmse_all %>%
+  filter(Year!=2017)%>%
+  ggplot(aes(x = n, y = val, color = Model))+
+  geom_line()+
+  ylab("RMSE")+
+  xlab("Days past forecast generation")+
+  facet_wrap("Year")
+dev.off()
 ```
 
 
