@@ -26,10 +26,15 @@ library(Metrics)
 Created 20 March 20 to convert my model to a forecasting framework
 - NOTE: got rid of the flexible hypo volume. I think that's what was destroying 2016
 - NOTE: I am saying data collected on the day of the forecast DOES get incorporated into the forecast
-- This one script can do normal, temp, o2, and persistence forecasts
+- This one script can do normal, temp, o2, sss, and persistence forecasts
 
 To do:
-- READ about forecast evaluation
+- Is there an oxygenation blip in 2018 that I don't have? What about 2016? 
+  -- I do think there is something I could fix for 2018
+  -- I don't think there is anything in 2016. The model captured it okay with the flexible hypo depth so maybe it was just thermocline movement
+- Add something about the amount of time since an observation (not just forecast date)
+- Try increasing theta
+- See what the ko2 value is from GLM-AED. Maybe lower since the only temp forecast is better in 2014?
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 - What am I doing with training vs test data? Is there a way to automatically get the best parameters? 
   - Read about what other people are doing
@@ -57,15 +62,16 @@ Done:
 - Add temp and o2 models to this script DONE
 - Just SSS model DONE
 - Compare models on a graph DONE
+- READ about forecast evaluation DONE
 
 
 ## Parameters
 ```{r}
 ## Parameters, CV, number of ensembles
 parms <- c(
-  R20 = .7, #mg/L/day
+  R20 = .6, #mg/L/day
   theta = 1.1, 
-  ko2 = 1, #mg/L
+  ko2 = .5, #mg/L
   sss_scalar = 3
 )
 
@@ -98,7 +104,6 @@ obs <- CTD %>%
   rename(datetime = Date)%>%
   group_by(datetime)%>%
   summarize(O2_mgL = mean(Conc))
-CTD$hypoVolume<-mean(CTD$hypoVolume, na.rm = TRUE)
 
 mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
 median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
@@ -113,7 +118,8 @@ stop = as.Date(c("2013-08-08","2014-10-15","2015-09-28","2016-10-07","2017-07-12
 avgs <- calc_avg(start,stop,CTD,SSS)
 avg_temp<-unlist(avgs[1])
 avg_o2<-unlist(avgs[2])
-
+avg_hypoVolume<-unlist(avgs[3])
+CTD$hypoVolume<-avg_hypoVolume
 ```
 
 
@@ -127,29 +133,30 @@ Run forecasts!
 run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
 model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
+gif = T
 
 #2014
 start = as.Date("2014-06-02")
 stop = as.Date("2014-10-15")
-results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = F,avg_o2 = avg_o2,avg_temp=avg_temp)
+results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
 
 #2016
 start = as.Date("2016-06-01")
 stop = as.Date("2016-10-07")
-results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = F,avg_o2 = avg_o2,avg_temp=avg_temp)
+results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2016 <- createRmseDF(n_days, results_2016)
 
 #2017
 start = as.Date("2017-06-28")
 stop = as.Date("2017-07-12")
-results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30, model_name = model_name, gif = F,avg_o2 = avg_o2,avg_temp=avg_temp)
+results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2017 <- createRmseDF(n_days, results_2017)
 
 #2018
 start = as.Date("2018-06-04")
 stop = as.Date("2018-10-22")
-results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = F,avg_o2 = avg_o2,avg_temp=avg_temp)
+results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2018 <- createRmseDF(n_days, results_2018)
 
 rmse_total <- rmse_2014%>%

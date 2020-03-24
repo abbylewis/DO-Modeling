@@ -32,10 +32,11 @@ calc_avg <- function(start,stop,CTD,SSS){
     fill(Conc,Temp,hypoVolume,thermo_depth,Chla,SA)
   avg_temp <- mean(toCalcAvg$Temp)
   avg_o2 <- mean(toCalcAvg$Conc)
-  return(list(avg_temp,avg_o2))
+  avg_hypoVolume <- mean(toCalcAvg$hypoVolume)
+  return(list(avg_temp,avg_o2,avg_hypoVolume))
 }
 
-inputs_year<- function(start, stop){
+inputs_year<- function(start, stop, CTD, SSS){
   dates = data.frame(seq(start,stop,by = "days"))
   colnames(dates) <- "Date"
   inputs = dates %>%
@@ -222,14 +223,12 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   if(model_name == "o2"){model = "_o2"}
   if(model_name == "SSS"){model = "_sss"}
   
-  
-  
   #Create results dataframe
   results<- createResultsDF(start, stop)
   #Create obs file with all dates (filling dates for NAs)
   obs_allDates <- extendObsDF(start,stop,obs)
   #Create inputs (drivers) for this year
-  inputs_thisYear <- inputs_year(start,stop)
+  inputs_thisYear <- inputs_year(start,stop, CTD, SSS)
   if(model_name == "temp"|model_name == "SSS"){inputs_thisYear$Conc <- avg_o2}
   if(model_name == "o2"|model_name == "SSS"){inputs_thisYear$Temp <- avg_temp}
   today <- start
