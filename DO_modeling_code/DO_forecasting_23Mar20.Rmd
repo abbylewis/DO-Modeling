@@ -69,11 +69,17 @@ Done:
 ```{r}
 ## Parameters, CV, number of ensembles
 parms <- c(
-  R20 = .6, #mg/L/day
-  theta = 1.1, 
+  R20 = .7, #mg/L/day
+  theta = 1.12, 
   ko2 = .5, #mg/L
   sss_scalar = 3
 )
+
+#BEST YET: R20=.7, theta=1.12, ko2 = .5, sss_scalar = 3: 2016 max = 2.2, 2014 max = 1.02, 2018 max = .76
+#R20=.6, theta=1.1, ko2 = .5, sss_scalar = 3: 2016 max = 2.24, 2014 max = 1.07
+#R20=.6, theta=1.08, ko2 = .5, sss_scalar = 3: 2016 max = 2.5, 2014 max = 1.2
+#R20=.5, theta=1.08, ko2 = .5, sss_scalar = 3: 2016 max = 2.42, 2014 max = 1.16
+#R20=.7, theta=1.12, ko2 = .5, sss_scalar = 3: 2016 max = 2.22, 2014 max = 1.09, 2018 max = .89
 
 # From GLEON workshop 
 # I made all of these up more or less randomly. Not sure how I should have come up with them
@@ -132,7 +138,7 @@ Run forecasts!
 ```{r}
 run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
-model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
+model_name = "SSS" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
 gif = T
 
 #2014
@@ -140,12 +146,14 @@ start = as.Date("2014-06-02")
 stop = as.Date("2014-10-15")
 results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
+rmse_2014
 
 #2016
 start = as.Date("2016-06-01")
 stop = as.Date("2016-10-07")
 results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2016 <- createRmseDF(n_days, results_2016)
+rmse_2016
 
 #2017
 start = as.Date("2017-06-28")
@@ -158,6 +166,7 @@ start = as.Date("2018-06-04")
 stop = as.Date("2018-10-22")
 results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2018 <- createRmseDF(n_days, results_2018)
+rmse_2018
 
 rmse_total <- rmse_2014%>%
   mutate(Year = 2014)%>%
