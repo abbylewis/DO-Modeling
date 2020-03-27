@@ -29,22 +29,11 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts
 
 To do:
-- Is there an oxygenation blip in 2018 that I don't have? What about 2016? 
-  -- I do think there is something I could fix for 2018
-  -- I don't think there is anything in 2016. The model captured it okay with the flexible hypo depth so maybe it was just thermocline movement
-- Add something about the amount of time since an observation (not just forecast date)
-- Try increasing theta
-- See what the ko2 value is from GLM-AED. Maybe lower since the only temp forecast is better in 2014?
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 - What am I doing with training vs test data? Is there a way to automatically get the best parameters? 
   - Read about what other people are doing
   - Look at what the parameters are changing to here
 - Look at alternative null models. I really think the most informative in my mind would be someone pointing at the graph and saying where they think it will go. Is this a thing?
-
-Should the model only run when you have a new observation?
-  - Yes. Drivers aren't changing. There's no point in rerunning the forecast, and this will lead to more noise in the RMSE plot
-  - Okay but it does pretty well and managers could potentially use it to predict further into the future even with out a new observation
-  - Not a huge priority. Look into best practices for how often the model should be run. Sticking with an even time step for now for simplicity. 
 
 Done:
 - Set aside some data as test (2013, 2015, 2019) and some as training (2014, 2016, 2017, 2018): DONE
@@ -63,11 +52,12 @@ Done:
 - Just SSS model DONE
 - Compare models on a graph DONE
 - READ about forecast evaluation DONE
+- Look at oxygenation file for 2016 and 2018
 
 
-## Parameters
-```{r}
 ## Parameters, CV, number of ensembles
+```{r}
+## Parameters
 parms <- c(
   R20 = .7, #mg/L/day
   theta = 1.12, 
@@ -89,7 +79,7 @@ param_cv = c(R20 = .1,
              theta = .01,
              ko2 = .1,
              sss_scalar = .2)
-driver_cv = c(SSS = .2,
+driver_cv = c(SSS = .2,# THis is the main source of uncertainty right now
               temp = .2,
               o2_mgL = 0) # Coefficient of variation of driver data 
 init_cond_cv = .1
@@ -126,6 +116,7 @@ avg_temp<-unlist(avgs[1])
 avg_o2<-unlist(avgs[2])
 avg_hypoVolume<-unlist(avgs[3])
 CTD$hypoVolume<-avg_hypoVolume
+
 ```
 
 
@@ -145,28 +136,35 @@ gif = T
 start = as.Date("2014-06-02")
 stop = as.Date("2014-10-15")
 results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
+rmse_2014_filt <- createRmseDF_filt(n_days, results_2014, obs) # Calculate rmse for days where there was an observation
 rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
 rmse_2014
+rmse_2014_filt
 
 #2016
 start = as.Date("2016-06-01")
 stop = as.Date("2016-10-07")
 results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
+rmse_2016_filt <- createRmseDF_filt(n_days, results_2016, obs)
 rmse_2016 <- createRmseDF(n_days, results_2016)
 rmse_2016
+rmse_2016_filt
 
 #2017
 start = as.Date("2017-06-28")
 stop = as.Date("2017-07-12")
 results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
+rmse_2017_filt <- createRmseDF_filt(n_days, results_2017,obs)
 rmse_2017 <- createRmseDF(n_days, results_2017)
 
 #2018
 start = as.Date("2018-06-04")
 stop = as.Date("2018-10-22")
 results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
+rmse_2018_filt <- createRmseDF_filt(n_days, results_2018,obs)
 rmse_2018 <- createRmseDF(n_days, results_2018)
 rmse_2018
+rmse_2018_filt
 
 rmse_total <- rmse_2014%>%
   mutate(Year = 2014)%>%
@@ -176,11 +174,27 @@ rmse_total <- rmse_2014%>%
 date <- format(Sys.Date(),"%d%b%y")
 write.csv(rmse_total,paste("../DO_modeling_results/rmse_",model_name,"_",date,".csv", sep = ""))
 
+rmse_filt_total <- rmse_2014_filt%>%
+  mutate(Year = 2014)%>%
+  full_join(rmse_2016_filt %>% mutate (Year = 2016))%>%
+  full_join(rmse_2017_filt %>% mutate (Year = 2017))%>%
+  full_join(rmse_2018_filt %>% mutate (Year = 2018))
+date <- format(Sys.Date(),"%d%b%y")
+write.csv(rmse_total,paste("../DO_modeling_results/rmse_filt_",model_name,"_",date,".csv", sep = ""))
+
 rmse_total%>%
   filter(Year!=2017)%>%
   ggplot(aes(x = n, y = val, col = as.factor(Year)))+
   geom_point()+
-  ylab("RMSE")+
+  ylab("RMSE (mg/L O2)")+
+  xlab("Days past forecast generation")+
+  labs(color = "Year")
+
+rmse_filt_total%>%
+  filter(Year!=2017)%>%
+  ggplot(aes(x = n, y = val, col = as.factor(Year)))+
+  geom_point()+
+  ylab("RMSE (mg/L O2)")+
   xlab("Days past forecast generation")+
   labs(color = "Year")
 ```
@@ -248,7 +262,7 @@ rmse_comb %>%
 ```{r}
 temp <- read.csv("../DO_modeling_results/rmse_temp_24Mar20.csv")
 o2 <- read.csv("../DO_modeling_results/rmse_o2_24Mar20.csv")
-full <- read.csv("../DO_modeling_results/rmse_full_24Mar20.csv")
+full <- read.csv("../DO_modeling_results/rmse_full_26Mar20.csv")
 sss <- read.csv("../DO_modeling_results/rmse_sss_24Mar20.csv")
 persist <- read.csv("../DO_modeling_results/rmse_persist_24Mar20.csv")
 
