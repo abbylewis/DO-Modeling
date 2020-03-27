@@ -1,3 +1,11 @@
+createRmseDF_filt <- function(n_days, results, obs){
+  results <- as.data.frame(results)
+  obs_dates <- as.numeric(obs$datetime)
+  results_filtered <- results[results$TODAY %in% obs_dates,]
+  rmse_filt <- createRmseDF(n_days, results_filtered)
+  return(rmse_filt)
+}
+
 calc_avg <- function(start,stop,CTD,SSS){
   dates_init <- data_frame(start,stop)
   dates <- dates_init %>%
@@ -129,8 +137,8 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
 }
 
 plot_hindcast <- function(est_out){
-  par(mfrow = c(2,3))
-  param_names = c("R20","theta","ko2","sss_scalar","chla_vmax")
+  par(mfrow = c(2,2))
+  param_names = c("R20","theta","ko2","sss_scalar")
   plot_param = function(est_out,num,name = "Parameter value"){
     num = num+1
     mean_param_est = apply(est_out$Y[num,,], 1, FUN = mean)
@@ -221,7 +229,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   if(model_name == "full"){model = ""}
   if(model_name == "temp"){model = "_temp"}
   if(model_name == "o2"){model = "_o2"}
-  if(model_name == "SSS"){model = "_sss"}
+  if(model_name %in% c("SSS","sss")){model = "_sss"}
   
   #Create results dataframe
   results<- createResultsDF(start, stop)
@@ -271,6 +279,9 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   if (gif == TRUE){
     convert <- paste("convert -delay ",delay," ",dir2,"/forecast*.png ",dir2,"/animated_forecast.gif", sep = "")
     system(convert)
+    dev.off()
+    jpeg(paste(dir2,"/params.jpeg",sep = ""), width = 6, height = 5, units = "in", res= 300)
+    plot_hindcast(est_thisYear)
     dev.off()
     # Remove png files
     if(remove == TRUE){
