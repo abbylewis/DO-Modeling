@@ -304,6 +304,7 @@ EnKF = function(n_en = 100,
       colnames(model_output)<-c("O2_mgL","Two","Three","Four","Five")
       Y[1 , t, n] = model_output$O2_mgL+Y[1, t-1, n] # store in Y vector. 
       #For oxygen I am adding the differential change to the original value
+      if(Y[1 , t, n]<0){Y[1 , t, n]<-0}
       Y[2 , t, n] = model_output[,2]
       Y[3 , t, n] = model_output[,3]
       Y[4 , t, n] = model_output[,4]
