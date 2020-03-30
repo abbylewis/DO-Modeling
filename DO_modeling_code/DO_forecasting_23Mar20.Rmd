@@ -65,8 +65,8 @@ Done:
 ```{r}
 ## Parameters
 parms <- c(
-  R20 = .7, #mg/L/day
-  theta = 1.12, 
+  R20 = .6, #mg/L/day
+  theta = 1.1, 
   ko2 = .5, #mg/L
   sss_scalar = 3
 )
@@ -126,7 +126,61 @@ CTD$hypoVolume<-avg_hypoVolume
 ```
 
 
+Testing: keep only training years!
+```{r}
+run_space <- 1 #Number of days between runs of the model
+n_days <- 14 #Forecast horizon
+model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
 
+#2013
+start = as.Date("2013-04-30")
+stop = as.Date("2013-08-08")
+inputs_2013 <- inputs_year(start,stop,CTD,SSS)
+test_2013 <- run_do_hindcast(inputs_2013,obs,stop)
+plot_o2(test_2013,stop,start,stop)
+
+#2014
+start = as.Date("2014-06-02")
+stop = as.Date("2014-10-15")
+inputs_2014 <- inputs_year(start,stop,CTD,SSS)
+test_2014 <- run_do_hindcast(inputs_2014,obs,stop)
+plot_o2(test_2014,stop,start,stop)
+
+#2015
+start = as.Date("2015-06-08")
+stop = as.Date("2015-09-28")
+inputs_2015 <- inputs_year(start,stop,CTD,SSS)
+test_2015 <- run_do_hindcast(inputs_2015,obs,stop)
+plot_o2(test_2015,stop,start,stop)
+
+#2016
+start = as.Date("2016-06-01")
+stop = as.Date("2016-10-07")
+inputs_2016 <- inputs_year(start,stop,CTD,SSS)
+test_2016 <- run_do_hindcast(inputs_2016,obs,stop)
+plot_o2(test_2016,stop,start,stop)
+
+#2017
+start = as.Date("2017-06-28")
+stop = as.Date("2017-07-12")
+inputs_2017 <- inputs_year(start,stop,CTD,SSS)
+test_2017 <- run_do_hindcast(inputs_2017,obs,stop)
+plot_o2(test_2017,stop,start,stop)
+
+#2018
+start = as.Date("2018-06-04")
+stop = as.Date("2018-10-22")
+inputs_2018 <- inputs_year(start,stop,CTD,SSS)
+test_2018 <- run_do_hindcast(inputs_2018,obs,stop)
+plot_o2(test_2018,stop,start,stop)
+
+#2019
+start = as.Date("2019-06-03")
+stop = as.Date("2019-10-30")
+inputs_2019 <- inputs_year(start,stop,CTD,SSS)
+test_2019 <- run_do_hindcast(inputs_2019,obs,stop)
+plot_o2(test_2019,stop,start,stop)
+```
 
 
 
