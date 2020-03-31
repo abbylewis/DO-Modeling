@@ -187,6 +187,7 @@ n_days <- 14 #Forecast horizon
 model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
 gif = F
 uncert = "obs" #Options = "all", "obs","init","driver","param"
+date <- format(Sys.Date(),"%d%b%y")
 
 #2013
 start = as.Date("2013-05-30")
