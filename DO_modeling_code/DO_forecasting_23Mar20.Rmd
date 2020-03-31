@@ -29,16 +29,15 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts
 
 To do:
-- Uncertainty partitioning
-  - Calculate SD at each time step
-  - Run the model with only driver uncertainty, calculate SD at each time step
-  - Run the model with only parameter uncertainty, calculate SD at each time step
-  - Run the model with only initial condition uncertainty, calculate SD at each time step
-  - Run the model with only observation uncertainty, calculate SD at each time step
+For every year:
+  - Run the model with specified driver uncertainty but no variability in initial conditions, params, or observations. Calculate SD of ensembles at each time step: this is driver uncertainty
+  - Repeat for parameter uncertainty, initial conditions, and observations
+  - I'm not sure how to do process uncertainty?
+  - Calculate overall variance between ensembles with all uncertainties included to see how much of this is explained by drivers/params/obs/initial conditions
+  
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 - What am I doing with training vs test data? Is there a way to automatically get the best parameters? 
   - Read about what other people are doing
-  - Look at what the parameters are changing to here
 - Look at alternative null models. I really think the most informative in my mind would be someone pointing at the graph and saying where they think it will go. Is this a thing?
 
 Done:
@@ -65,17 +64,19 @@ Done:
 ```{r}
 ## Parameters
 parms <- c(
-  R20 = .6, #mg/L/day
-  theta = 1.1, 
+  R20 = .7, #mg/L/day
+  theta = 1.12, 
   ko2 = .5, #mg/L
   sss_scalar = 3
 )
 
 #BEST YET: R20=.7, theta=1.12, ko2 = .5, sss_scalar = 3: 2016 max = 2.2, 2014 max = 1.02, 2018 max = .76
+#--> Overfit to 2014, 2016 and 2018!
 #R20=.6, theta=1.1, ko2 = .5, sss_scalar = 3: 2016 max = 2.24, 2014 max = 1.07
 #R20=.6, theta=1.08, ko2 = .5, sss_scalar = 3: 2016 max = 2.5, 2014 max = 1.2
 #R20=.5, theta=1.08, ko2 = .5, sss_scalar = 3: 2016 max = 2.42, 2014 max = 1.16
 #R20=.7, theta=1.12, ko2 = .5, sss_scalar = 3: 2016 max = 2.22, 2014 max = 1.09, 2018 max = .89
+#R20 = .4, theta = 1.08, ko2 = .5, sss_scalar = 4: 2016 is especially bad (2.5). 2014 is not great. 2013 is good
 
 # From GLEON workshop 
 # I made all of these up more or less randomly. Not sure how I should have come up with them
@@ -84,8 +85,8 @@ n_en = 100 # number of ensembles
 param_cv = c(R20 = .1,
              theta = .01,
              ko2 = .1,
-             sss_scalar = .2)
-driver_cv = c(SSS = .2,# THis is the main source of uncertainty right now
+             sss_scalar = .1)
+driver_cv = c(SSS = .2,# This is the main source of uncertainty right now
               temp = .2,
               o2_mgL = 0) # Coefficient of variation of driver data 
 init_cond_cv = .1
@@ -128,37 +129,43 @@ CTD$hypoVolume<-avg_hypoVolume
 
 Testing: keep only training years!
 ```{r}
-run_space <- 1 #Number of days between runs of the model
-n_days <- 14 #Forecast horizon
-model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
-
 #2013
-start = as.Date("2013-04-30")
-stop = as.Date("2013-08-08")
+start = as.Date("2013-05-30")
+stop = as.Date("2013-09-25")
 inputs_2013 <- inputs_year(start,stop,CTD,SSS)
 test_2013 <- run_do_hindcast(inputs_2013,obs,stop)
 plot_o2(test_2013,stop,start,stop)
+plot(inputs_2013$Date,inputs_2013$Temp)
+#plot_hindcast(test_2013)
+#pairs(inputs_2013)
 
 #2014
 start = as.Date("2014-06-02")
-stop = as.Date("2014-10-15")
+stop = as.Date("2014-10-04")
 inputs_2014 <- inputs_year(start,stop,CTD,SSS)
 test_2014 <- run_do_hindcast(inputs_2014,obs,stop)
 plot_o2(test_2014,stop,start,stop)
+#plot(inputs_2014$Date,inputs_2014$Temp)
+#plot_hindcast(test_2014)
+#plot(inputs_2014$Date,inputs_2014$Chla)
 
 #2015
-start = as.Date("2015-06-08")
+start = as.Date("2015-05-28")
 stop = as.Date("2015-09-28")
 inputs_2015 <- inputs_year(start,stop,CTD,SSS)
 test_2015 <- run_do_hindcast(inputs_2015,obs,stop)
 plot_o2(test_2015,stop,start,stop)
+#plot_hindcast(test_2015)
+plot(inputs_2015$Date,inputs_2015$scfm)
 
 #2016
 start = as.Date("2016-06-01")
-stop = as.Date("2016-10-07")
+stop = as.Date("2016-09-30")
 inputs_2016 <- inputs_year(start,stop,CTD,SSS)
 test_2016 <- run_do_hindcast(inputs_2016,obs,stop)
 plot_o2(test_2016,stop,start,stop)
+#plot_hindcast(test_2016)
+plot(inputs_2016$Date,inputs_2016$Temp)
 
 #2017
 start = as.Date("2017-06-28")
@@ -166,20 +173,8 @@ stop = as.Date("2017-07-12")
 inputs_2017 <- inputs_year(start,stop,CTD,SSS)
 test_2017 <- run_do_hindcast(inputs_2017,obs,stop)
 plot_o2(test_2017,stop,start,stop)
-
-#2018
-start = as.Date("2018-06-04")
-stop = as.Date("2018-10-22")
-inputs_2018 <- inputs_year(start,stop,CTD,SSS)
-test_2018 <- run_do_hindcast(inputs_2018,obs,stop)
-plot_o2(test_2018,stop,start,stop)
-
-#2019
-start = as.Date("2019-06-03")
-stop = as.Date("2019-10-30")
-inputs_2019 <- inputs_year(start,stop,CTD,SSS)
-test_2019 <- run_do_hindcast(inputs_2019,obs,stop)
-plot_o2(test_2019,stop,start,stop)
+#plot_hindcast(test_2017)
+#plot(inputs_2017$Date,inputs_2017$Temp)
 ```
 
 
@@ -189,12 +184,12 @@ Run forecasts!
 ```{r}
 run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
-model_name = "temp" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
+model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
 gif = T
 
 #2013
-start = as.Date("2013-04-30")
-stop = as.Date("2013-08-08")
+start = as.Date("2013-05-30")
+stop = as.Date("2013-09-04")
 results_2013 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2013_filt <- createRmseDF_filt(n_days, results_2013, obs) # Calculate rmse for days where there was an observation
 rmse_2013 <- createRmseDF(n_days, results_2013) # Calculate rmse for all days
@@ -203,7 +198,7 @@ rmse_2013_filt
 
 #2014
 start = as.Date("2014-06-02")
-stop = as.Date("2014-10-15")
+stop = as.Date("2014-10-04")
 results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2014_filt <- createRmseDF_filt(n_days, results_2014, obs) # Calculate rmse for days where there was an observation
 rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
@@ -211,7 +206,7 @@ rmse_2014
 rmse_2014_filt
 
 #2015
-start = as.Date("2015-06-08")
+start = as.Date("2015-05-28")
 stop = as.Date("2015-09-28")
 results_2015 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2015_filt <- createRmseDF_filt(n_days, results_2015, obs)
@@ -237,7 +232,7 @@ rmse_2017 <- createRmseDF(n_days, results_2017)
 
 #2018
 start = as.Date("2018-06-04")
-stop = as.Date("2018-10-22")
+stop = as.Date("2018-10-01")
 results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2018_filt <- createRmseDF_filt(n_days, results_2018,obs)
 rmse_2018 <- createRmseDF(n_days, results_2018)
@@ -246,7 +241,7 @@ rmse_2018_filt
 
 #2019
 start = as.Date("2019-06-03")
-stop = as.Date("2019-10-30")
+stop = as.Date("2019-10-02")
 results_2019 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp)
 rmse_2019_filt <- createRmseDF_filt(n_days, results_2019,obs)
 rmse_2019 <- createRmseDF(n_days, results_2019)
@@ -298,19 +293,19 @@ run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
 
 #2013
-start = as.Date("2013-04-30")
-stop = as.Date("2013-08-08")
+start = as.Date("2013-05-30")
+stop = as.Date("2013-09-04")
 persist_2013 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2013 <- createRmseDF(n_days, persist_2013)
 
 #2014
 start = as.Date("2014-06-02")
-stop = as.Date("2014-10-15")
+stop = as.Date("2014-10-04")
 persist_2014 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2014 <- createRmseDF(n_days, persist_2014)
 
 #2015
-start = as.Date("2015-06-08")
+start = as.Date("2015-05-28")
 stop = as.Date("2015-09-28")
 persist_2015 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2015 <- createRmseDF(n_days, persist_2015)
@@ -329,13 +324,13 @@ rmse_persist_2017 <- createRmseDF(n_days, persist_2017)
 
 #2018
 start = as.Date("2018-06-04")
-stop = as.Date("2018-10-22")
+stop = as.Date("2018-10-01")
 persist_2018 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2018 <- createRmseDF(n_days, persist_2018)
 
 #2019
 start = as.Date("2019-06-03")
-stop = as.Date("2019-10-30")
+stop = as.Date("2019-10-02")
 persist_2019 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2019 <- createRmseDF(n_days, persist_2019)
 
@@ -376,9 +371,9 @@ rmse_comb %>%
 ```{r}
 temp <- read.csv("../DO_modeling_results/rmse_temp_29Mar20.csv")
 o2 <- read.csv("../DO_modeling_results/rmse_o2_29Mar20.csv")
-full <- read.csv("../DO_modeling_results/rmse_full_29Mar20.csv")
+full <- read.csv("../DO_modeling_results/rmse_full_31Mar20.csv")
 sss <- read.csv("../DO_modeling_results/rmse_sss_29Mar20.csv")
-persist <- read.csv("../DO_modeling_results/rmse_persist_29Mar20.csv")
+persist <- read.csv("../DO_modeling_results/rmse_persist_31Mar20.csv")
 
 rmse_all <- persist%>%
   mutate(Model = "persistance")%>%
