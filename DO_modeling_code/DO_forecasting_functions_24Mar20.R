@@ -193,10 +193,10 @@ plot_param = function(est_out,num,name = "Parameter value"){
 createResultsDF <- function(start, stop){
   days <- as.numeric(difftime(stop,start, units = "days"))
   rows <- floor(days/run_space)+1
-  cols <- n_days*2+1
+  cols <- n_days*3+1
   results <- matrix(NA, nrow = rows, ncol = cols)
-  n <- rep(seq(1,n_days))
-  type <- rep(c("_pred","_obs"),each = n_days)
+  n <- rep(seq(1,n_days),3)
+  type <- rep(c("_pred","_obs","_sd"),each = n_days)
   col_names <- c("TODAY",paste("PLUS",n,type,sep = ""))
   colnames(results)<-col_names
   return(results)
@@ -210,11 +210,12 @@ extendObsDF <- function(start,stop,obs){
   return(obs_allDates)
 }
 
-createRmseDF <- function(n_days,results){
+createRmseDF <- function(n_days,results, cali = 14){
   n <- seq(1,n_days)
   val <- rep(NA,n_days)
   class(val) <- "numeric"
   rmse_thisYear <- data.frame(n,val)
+  results <- tail(results, n = -cali)
   results <- as.data.frame(results)
   for(i in seq(1:n_days)){
     predicted <- results[i+1]
@@ -255,12 +256,14 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
     cols <- n_days*2+1
     est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name)
     mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
+    sd_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = sd)
     obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
     if(length(obs_toAdd)<n_days){
       obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))
     }
-    results[row,(2+n_days):cols]<- obs_toAdd
+    results[row,(2+n_days):(1+2*n_days)]<- obs_toAdd
     results[row,2:(1+n_days)]<-tail(mean_o2_est, n = n_days)
+    results[row,(2+2*n_days):(1+3*n_days)]<-tail(sd_o2_est, n = n_days)
     results[row,1]<-today
     if(gif == TRUE){
       plot_o2(est_thisYear, today, start, stop)
