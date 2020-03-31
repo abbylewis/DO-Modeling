@@ -68,7 +68,37 @@ inputs_year<- function(start, stop, CTD, SSS){
   inputs
 }
 
-run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal"){
+run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all"){
+  if(uncert == "parm"){
+    obs_cv2 = 0
+    driver_cv2 = rep(0,3)
+    param_cv2 = param_cv
+    init_cond_cv2 = 0
+  }
+  if(uncert == "init"){
+    obs_cv2 = 0
+    driver_cv2 = rep(0,3)
+    param_cv2 = rep(0,4)
+    init_cond_cv2 = init_cond_cv
+  }
+  if(uncert == "driver"){
+    obs_cv2 = 0
+    driver_cv2 = driver_cv
+    param_cv2 = rep(0,4)
+    init_cond_cv2 = 0
+  }
+  if(uncert == "obs"){
+    obs_cv2 = obs_cv
+    driver_cv2 = rep(0,3)
+    param_cv2 = rep(0,4)
+    init_cond_cv2 = 0
+  }
+  if(uncert == "all"){
+    obs_cv2 = obs_cv
+    driver_cv2 = driver_cv
+    param_cv2 = param_cv
+    init_cond_cv2 = init_cond_cv
+  }
   obs = obs%>%
     filter(datetime<=today)
   inputs = inputs%>%
@@ -109,10 +139,10 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
                    n_params_obs = 0,
                    n_drivers = 3,
                    parm_init = parms, 
-                   obs_cv = obs_cv,
-                   param_cv = param_cv,
-                   driver_cv = driver_cv, 
-                   init_cond_cv = init_cond_cv,
+                   obs_cv = obs_cv2,
+                   param_cv = param_cv2,
+                   driver_cv = driver_cv2, 
+                   init_cond_cv = init_cond_cv2,
                    model = no_O2_model)
   }else{
     #Run EnKF
@@ -225,7 +255,7 @@ createRmseDF <- function(n_days,results, cali = 14){
   rmse_thisYear
 }
 
-runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30, model_name = "full",avg_o2,avg_temp){
+runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30, model_name = "full",avg_o2,avg_temp,uncert){
   #Model types = full (""), temp ("_temp"), o2 ("_o2")
   if(model_name == "full"){model = ""}
   if(model_name == "temp"){model = "_temp"}
@@ -254,7 +284,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   while(today < stop){
     row<- as.numeric(difftime(today,start))/run_space+1
     cols <- n_days*2+1
-    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name)
+    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert)
     mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
     sd_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = sd)
     obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
