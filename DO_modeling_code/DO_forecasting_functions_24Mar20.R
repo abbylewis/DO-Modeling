@@ -69,7 +69,7 @@ inputs_year<- function(start, stop, CTD, SSS){
 }
 
 run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all"){
-  if(uncert == "parm"){
+  if(uncert == "param"){
     obs_cv2 = 0
     driver_cv2 = rep(0,3)
     param_cv2 = param_cv
@@ -157,10 +157,10 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
                    n_params_obs = 0,
                    n_drivers = 2,
                    parm_init = parms, 
-                   obs_cv = obs_cv,
-                   param_cv = param_cv,
-                   driver_cv = driver_cv, 
-                   init_cond_cv = init_cond_cv,
+                   obs_cv = obs_cv2,
+                   param_cv = param_cv2,
+                   driver_cv = driver_cv2, 
+                   init_cond_cv = init_cond_cv2,
                    model = O2_model)
   }
   return(est_out)
@@ -270,7 +270,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   inputs_thisYear <- inputs_year(start,stop, CTD, SSS)
   if(model_name == "temp"|model_name == "SSS"){inputs_thisYear$Conc <- avg_o2}
   if(model_name == "o2"|model_name == "SSS"){inputs_thisYear$Temp <- avg_temp}
-  today <- start
+  #today <- start
   if(gif == TRUE){
     dateRun <- format(Sys.Date(),"%d%b%y")
     year <- year(start)
@@ -284,30 +284,42 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   while(today < stop){
     row<- as.numeric(difftime(today,start))/run_space+1
     cols <- n_days*2+1
-    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert)
-    mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
-    sd_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = sd)
-    obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
-    if(length(obs_toAdd)<n_days){
-      obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))
+    check = tryCatch({ #If I get an error that the matrix is singular
+      est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert)
+      TRUE
+    },
+    error = function(e){
+      FALSE
+    })
+    if(check == TRUE){
+      mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
+      sd_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = sd)
+      obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
+      if(length(obs_toAdd)<n_days){
+        obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))
+      }
+      results[row,(2+n_days):(1+2*n_days)]<- obs_toAdd
+      results[row,2:(1+n_days)]<-tail(mean_o2_est, n = n_days)
+      results[row,(2+2*n_days):(1+3*n_days)]<-tail(sd_o2_est, n = n_days)
+      results[row,1]<-today
+      if(gif == TRUE){
+        plot_o2(est_thisYear, today, start, stop)
+      }
+      if(archiveForecasts == TRUE){
+        dateRun <- format(Sys.Date(),"%d%b%y")
+        year <- year(start)
+        dir1.1 <- paste("../Archived_forecasts",dateRun,sep = "/")
+        dir2.1<-paste(dir1.1,"/",year,model,sep = "")
+        dir.create(dir1.1)
+        dir.create(dir2.1)
+        write.csv(est_thisYear$Y[1,,],paste(dir2,"/",format(today,"%d%b%y"),".csv",sep = ""))
+      }
+      today <- today+run_space
+    }else{
+      results[row,1]<-today
+      results[row:nrow(results),(2+2*n_days):(1+3*n_days)]<-0
+      today<-stop
     }
-    results[row,(2+n_days):(1+2*n_days)]<- obs_toAdd
-    results[row,2:(1+n_days)]<-tail(mean_o2_est, n = n_days)
-    results[row,(2+2*n_days):(1+3*n_days)]<-tail(sd_o2_est, n = n_days)
-    results[row,1]<-today
-    if(gif == TRUE){
-      plot_o2(est_thisYear, today, start, stop)
-    }
-    if(archiveForecasts == TRUE){
-      dateRun <- format(Sys.Date(),"%d%b%y")
-      year <- year(start)
-      dir1.1 <- paste("../Archived_forecasts",dateRun,sep = "/")
-      dir2.1<-paste(dir1.1,"/",year,model,sep = "")
-      dir.create(dir1.1)
-      dir.create(dir2.1)
-      write.csv(est_thisYear$Y[1,,],paste(dir2,"/",format(today,"%d%b%y"),".csv",sep = ""))
-    }
-    today <- today+run_space
   }
   if (gif == TRUE){
     convert <- paste("convert -delay ",delay," ",dir2,"/forecast*.png ",dir2,"/animated_forecast.gif", sep = "")
