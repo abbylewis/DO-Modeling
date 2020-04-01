@@ -1,3 +1,15 @@
+sd_sum <- function(sd_df,name,year){
+  out <- sd_df%>%
+    filter(!is.na(TODAY))%>%
+    select(seq(31,44))%>%
+    replace_na(list(rep(0,ncol(sd_df))))%>%
+    summarize_all(~mean(.))%>%
+    mutate(uncert = paste(name),
+           year = year)
+  out
+}
+
+
 createRmseDF_filt <- function(n_days, results, obs){
   results <- as.data.frame(results)
   obs_dates <- as.numeric(obs$datetime)
@@ -70,19 +82,19 @@ inputs_year<- function(start, stop, CTD, SSS){
 
 run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all"){
   if(uncert == "param"){
-    obs_cv2 = 0
+    obs_cv2 = obs_cv
     driver_cv2 = rep(0,3)
     param_cv2 = param_cv
     init_cond_cv2 = 0
   }
   if(uncert == "init"){
-    obs_cv2 = 0
+    obs_cv2 = obs_cv
     driver_cv2 = rep(0,3)
     param_cv2 = rep(0,4)
     init_cond_cv2 = init_cond_cv
   }
   if(uncert == "driver"){
-    obs_cv2 = 0
+    obs_cv2 = obs_cv
     driver_cv2 = driver_cv
     param_cv2 = rep(0,4)
     init_cond_cv2 = 0
@@ -270,7 +282,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   inputs_thisYear <- inputs_year(start,stop, CTD, SSS)
   if(model_name == "temp"|model_name == "SSS"){inputs_thisYear$Conc <- avg_o2}
   if(model_name == "o2"|model_name == "SSS"){inputs_thisYear$Temp <- avg_temp}
-  #today <- start
+  today <- start
   if(gif == TRUE){
     dateRun <- format(Sys.Date(),"%d%b%y")
     year <- year(start)

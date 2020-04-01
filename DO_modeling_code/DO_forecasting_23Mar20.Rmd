@@ -29,8 +29,7 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
 
 To do:
-- Parameter uncertainty is wildly wrong
-- Observation uncertainty is not right either (== 0)
+- Standardize graphs by the amount of error
 - I'm not sure how to do process uncertainty?
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 - What am I doing with training vs test data? Is there a way to automatically get the best parameters? 
@@ -55,7 +54,9 @@ Done:
 - Compare models on a graph DONE
 - READ about forecast evaluation DONE
 - Look at oxygenation file for 2016 and 2018
-- Finished driver, init cond, and obs uncertainty!
+- Finished driver, init cond, param uncertainty!
+- Observation uncertainty is not a thing. Models need to be different already to get adjusted by enkf
+- Made graphs of partitioned uncertainty as a function of forecast horizon and day of summer for each year
 
 
 ## Parameters, CV, number of ensembles
@@ -183,8 +184,8 @@ Run forecasts!
 run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
 model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
-gif = F
-uncert = "obs" #Options = "all", "obs","init","driver","param"
+gif = T
+uncert = "driver" #Options = "all","init","driver","param"
 date <- format(Sys.Date(),"%d%b%y")
 
 #2013
@@ -192,7 +193,7 @@ start = as.Date("2013-05-30")
 stop = as.Date("2013-09-04")
 results_2013 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
 dir.create(paste("../DO_modeling_results/",date,sep = ""))
-write.csv(results_2013,paste("../DO_modeling_results/31Mar20/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+write.csv(results_2013,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
 rmse_2013_filt <- createRmseDF_filt(n_days, results_2013, obs) # Calculate rmse for days where there was an observation
 rmse_2013 <- createRmseDF(n_days, results_2013) # Calculate rmse for all days
 rmse_2013
@@ -202,7 +203,7 @@ rmse_2013_filt
 start = as.Date("2014-06-02")
 stop = as.Date("2014-10-04")
 results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
-write.csv(results_2014,paste("../DO_modeling_results/31Mar20/forecast_2014_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+write.csv(results_2014,paste("../DO_modeling_results/",date,"/forecast_2014_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
 rmse_2014_filt <- createRmseDF_filt(n_days, results_2014, obs) # Calculate rmse for days where there was an observation
 rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
 rmse_2014
@@ -212,7 +213,7 @@ rmse_2014_filt
 start = as.Date("2015-05-28")
 stop = as.Date("2015-09-28")
 results_2015 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
-write.csv(results_2015,paste("../DO_modeling_results/31Mar20/forecast_2015_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+write.csv(results_2015,paste("../DO_modeling_results/",date,"/forecast_2015_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
 rmse_2015_filt <- createRmseDF_filt(n_days, results_2015, obs)
 rmse_2015 <- createRmseDF(n_days, results_2015)
 rmse_2015
@@ -222,7 +223,7 @@ rmse_2015_filt
 start = as.Date("2016-06-01")
 stop = as.Date("2016-10-07")
 results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
-write.csv(results_2016,paste("../DO_modeling_results/31Mar20/forecast_2016_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+write.csv(results_2016,paste("../DO_modeling_results/",date,"/forecast_2016_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
 rmse_2016_filt <- createRmseDF_filt(n_days, results_2016, obs)
 rmse_2016 <- createRmseDF(n_days, results_2016)
 rmse_2016
@@ -232,7 +233,7 @@ rmse_2016_filt
 start = as.Date("2017-06-28")
 stop = as.Date("2017-07-12")
 results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
-write.csv(results_2017,paste("../DO_modeling_results/31Mar20/forecast_2017_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+write.csv(results_2017,paste("../DO_modeling_results/",date,"/forecast_2017_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
 rmse_2017_filt <- createRmseDF_filt(n_days, results_2017,obs)
 rmse_2017 <- createRmseDF(n_days, results_2017)
 
@@ -240,7 +241,7 @@ rmse_2017 <- createRmseDF(n_days, results_2017)
 start = as.Date("2018-06-04")
 stop = as.Date("2018-10-01")
 results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
-write.csv(results_2018,paste("../DO_modeling_results/31Mar20/forecast_2018_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+write.csv(results_2018,paste("../DO_modeling_results/",date,"/forecast_2018_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
 rmse_2018_filt <- createRmseDF_filt(n_days, results_2018,obs)
 rmse_2018 <- createRmseDF(n_days, results_2018)
 rmse_2018
@@ -250,7 +251,7 @@ rmse_2018_filt
 start = as.Date("2019-06-03")
 stop = as.Date("2019-10-02")
 results_2019 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
-write.csv(results_2019,paste("../DO_modeling_results/31Mar20/forecast_2019_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+write.csv(results_2019,paste("../DO_modeling_results/",date,"/forecast_2019_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
 rmse_2019_filt <- createRmseDF_filt(n_days, results_2019,obs)
 rmse_2019 <- createRmseDF(n_days, results_2019)
 rmse_2019
@@ -389,60 +390,113 @@ rmse_all %>%
   facet_wrap("Year")
 dev.off()
 ```
+
+Uncertainty calcs
 ```{r}
 #Just to get column names
-SDs <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_2013_full_model_all_uncert.csv",sep = ""))
-SDs = SDs[FALSE,seq(31,44)] 
+all <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_2013_full_model_all_uncert.csv",sep = ""))
+SDs = all[FALSE,seq(31,44)] 
 
 #Run through all saved forecasts
 for(year in seq(2013,2019)){
-  full <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))
-  full_sd <- full%>%
-    filter(!is.na(TODAY))%>%
-    select(seq(31,44))%>%
-    replace_na(list(rep(0,ncol(full))))%>%
-    summarize_all(~mean(.))%>%
+  full <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
     mutate(uncert = "all",
            year = year)
-  obs_1 <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_",year,"_full_model_obs_uncert.csv",sep = ""))
-  obs_sd <- obs_1%>%
-    filter(!is.na(TODAY))%>%
-    select(seq(31,44))%>%
-    replace_na(list(rep(0,ncol(obs_1))))%>%
-    summarize_all(~mean(.))%>%
-    mutate(uncert = "obs",
-           year = year)
-  param <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_",year,"_full_model_param_uncert.csv",sep = ""))
-  param_sd <- param%>%
-    filter(!is.na(TODAY))%>%
-    select(seq(31,44))%>%
-    replace_na(list(rep(0,ncol(param))))%>%
-    summarize_all(~mean(.))%>%
+  full_sd <- sd_sum(full,"all",year)
+  param <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_",year,"_full_model_param_uncert.csv",sep = ""))%>%
     mutate(uncert = "param",
            year = year)
-  driver <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_",year,"_full_model_driver_uncert.csv",sep = ""))
-  driver_sd <- driver%>%
-    filter(!is.na(TODAY))%>%
-    select(seq(31,44))%>%
-    replace_na(list(rep(0,ncol(driver))))%>%
-    summarize_all(~mean(.))%>%
+  param_sd <- sd_sum(param,"param",year)
+  driver <- read.csv(paste("../DO_modeling_results/01Apr20/forecast_",year,"_full_model_driver_uncert.csv",sep = ""))%>%
     mutate(uncert = "driver",
            year = year)
-  init <- read.csv(paste("../DO_modeling_results/31Mar20/forecast_",year,"_full_model_init_uncert.csv",sep = ""))
-  init_sd <- init%>%
-    filter(!is.na(TODAY))%>%
-    select(seq(31,44))%>%
-    replace_na(list(rep(0,ncol(init))))%>%
-    summarize_all(~mean(.))%>%
+  driver_sd <- sd_sum(driver,"driver",year)
+  init <- read.csv(paste("../DO_modeling_results/01Apr20/forecast_",year,"_full_model_init_uncert.csv",sep = ""))%>%
     mutate(uncert = "init",
            year = year)
+  init_sd <- sd_sum(init,"init",year)
   SDs = SDs%>%
     full_join(full_sd)%>%
     full_join(param_sd)%>%
-    full_join(obs_sd)%>%
     full_join(driver_sd)%>%
     full_join(init_sd)
+  all = all%>%
+    full_join(full)%>%
+    full_join(param)%>%
+    full_join(driver)%>%
+    full_join(init)
 }
+
+all_sd = all[,c(2,seq(31,46))]%>%
+  filter(!is.na(TODAY))
+
+all_sd_std = all_sd%>%
+  filter(uncert !="all")%>%
+  group_by(TODAY)%>%
+  mutate(TOTAL_7 = sum(PLUS7_sd),
+         TOTAL_14 = sum(PLUS14_sd))
+
+```
+
+
+Uncertainty plots
+```{r}
+
+all_sd_std %>%
+  filter(uncert != "all")%>%
+  ggplot(aes(x = as.Date(TODAY),y= PLUS7_sd/TOTAL_7, fill = uncert))+
+  geom_bar(stat = "identity", width = 1)+
+  facet_wrap("year", scales = "free_x")+
+  labs(fill = "Uncertainty")+
+  xlab("")+
+  ylab("SD (fraction of total)")+
+  ggtitle("7 day horizon")
+
+all_sd_std %>%
+  filter(uncert != "all")%>%
+  ggplot(aes(x = as.Date(TODAY),y= PLUS14_sd/TOTAL_14, fill = uncert))+
+  geom_bar(stat = "identity", width = 1)+
+  facet_wrap("year", scales = "free_x")+
+  labs(fill = "Uncertainty")+
+  xlab("")+
+  ylab("SD (fraction of total)")+
+  ggtitle("14 day horizon")
+
+all_sd %>%
+  filter(uncert != "all")%>%
+  ggplot(aes(x = as.Date(TODAY),y= PLUS7_sd, fill = uncert))+
+  geom_bar(stat = "identity", width = 1)+
+  facet_wrap("year", scales = "free_x")+
+  labs(fill = "Uncertainty")+
+  xlab("")+
+  ylab("SD (7 day horizon)")
+
+all_sd %>%
+  filter(uncert == "all")%>%
+  ggplot(aes(x = as.Date(TODAY),y= PLUS7_sd, fill = uncert))+
+  geom_bar(stat = "identity", width = 1)+
+  facet_wrap("year", scales = "free_x")+
+  labs(fill = "Uncertainty")+
+  xlab("")+
+  ylab("SD (7 day horizon)")
+
+all_sd %>%
+  filter(uncert != "all")%>%
+  ggplot(aes(x = as.Date(TODAY),y= PLUS14_sd, fill = uncert))+
+  geom_bar(stat = "identity", width = 1)+
+  facet_wrap("year", scales = "free_x")+
+  labs(fill = "Uncertainty")+
+  xlab("")+
+  ylab("SD (14 day horizon)")
+
+all_sd %>%
+  filter(uncert == "all")%>%
+  ggplot(aes(x = as.Date(TODAY),y= PLUS14_sd, fill = uncert))+
+  geom_bar(stat = "identity", width = 1)+
+  facet_wrap("year", scales = "free_x")+
+  labs(fill = "Uncertainty")+
+  xlab("")+
+  ylab("SD (14 day horizon)")
 
 SDs_final = SDs%>%
   gather(day,sd,1:14)%>%
@@ -450,17 +504,22 @@ SDs_final = SDs%>%
   select(-day)
 
 SDs_final%>%
-  filter(uncert != "param",
-         uncert != "all")%>%
+  filter(uncert != "all")%>%
   ggplot(aes(x = day_n,y=sd, fill = uncert))+
   geom_bar(stat = "identity")+
-  facet_wrap("year")
+  facet_wrap("year")+
+  labs(fill = "Uncertainty")+
+  xlab("Forecast Horizon (days)")+
+  ylab("SD")
 
 SDs_final%>%
   filter(uncert == "all")%>%
   ggplot(aes(x = day_n,y=sd, fill = uncert))+
   geom_bar(stat = "identity")+
-  facet_wrap("year")
+  facet_wrap("year")+
+  labs(fill = "Uncertainty")+
+  xlab("Forecast Horizon (days)")+
+  ylab("SD")
 ```
 
 
@@ -510,19 +569,20 @@ Just for troubleshooting:
 ```{r}
 n_en = n_en
 start = start
-stop = stop
+stop = min(stop,today+n_days)
 time_step = "days"
 obs_file = obs
 driver_file = model_inputs
 n_states_est = 1
 n_params_est = 4
 n_params_obs = 0
-n_drivers = 6
+n_drivers = 2
 parm_init = parms
-obs_cv = obs_cv
-param_cv = param_cv
-driver_cv = driver_cv
-init_cond_cv = init_cond_cv
+obs_cv = obs_cv2
+param_cv = param_cv2
+driver_cv = driver_cv2
+init_cond_cv = init_cond_cv2
+model = O2_model
 ```
 
 Notes for next steps: 
