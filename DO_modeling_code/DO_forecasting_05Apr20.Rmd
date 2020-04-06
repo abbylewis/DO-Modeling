@@ -15,8 +15,8 @@ library(deSolve)
 library(lubridate)
 library(formatR)
 library(knitr)
-source('EnKF_functions_21Mar20.R')
-source('DO_forecasting_functions_24Mar20.R')
+source('EnKF_functions_05Apr20_uncert.R')
+source('DO_forecasting_functions_05Apr20.R')
 source('O2_models_24Mar20.R')
 library(magick)
 library(animation)
@@ -187,7 +187,7 @@ run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
 model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
 gif = T
-uncert = "driver" #Options = "all","init","driver","param"
+uncert = "param" #Options = "all","init","driver","param"
 date <- format(Sys.Date(),"%d%b%y")
 
 #2013
