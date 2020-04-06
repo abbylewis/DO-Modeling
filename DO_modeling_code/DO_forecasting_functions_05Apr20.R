@@ -6,8 +6,7 @@ sd_sum <- function(sd_df,name,year){
   out <- sd_df%>%
     filter(!is.na(TODAY))%>%
     select(seq(31,44))%>%
-    replace_na(list(rep(0,ncol(sd_df))))%>%
-    summarize_all(~mean(.))%>%
+    summarize_all(~mean(.,na.rm=T))%>%
     mutate(uncert = paste(name),
            year = year)
   out
@@ -23,7 +22,7 @@ createRmseDF_filt <- function(n_days, results, obs){
 }
 
 calc_avg <- function(start,stop,CTD,SSS){
-  dates_init <- data_frame(start,stop)
+  dates_init <- tibble(start,stop)
   dates <- dates_init %>%
     mutate(year = year(start))%>%
     select(year,start,stop)
@@ -216,7 +215,7 @@ createResultsDF <- function(start, stop){
   cols <- n_days*3+1
   results <- matrix(NA, nrow = rows, ncol = cols)
   n <- rep(seq(1,n_days),3)
-  type <- rep(c("_pred","_obs","_sd"),each = n_days)
+  type <- rep(c("_pred","_obs","_var"),each = n_days)
   col_names <- c("TODAY",paste("PLUS",n,type,sep = ""))
   colnames(results)<-col_names
   return(results)
@@ -274,23 +273,25 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   while(today < stop){
     row<- as.numeric(difftime(today,start))/run_space+1
     cols <- n_days*2+1
-    check = tryCatch({ #If I get an error that the matrix is singular
+    check = tryCatch({ #Check if I get an error that the matrix is singular
       est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert)
       TRUE
     },
     error = function(e){
       FALSE
     })
-    if(check == TRUE){
+    if(check == TRUE){ #If there is no error
       mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
-      sd_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = sd)
+      mean_o2_est_short <- mean_o2_est[(row+1):min(length(mean_o2_est),(row+n_days))]
+      var_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = var)
+      var_o2_est_short = var_o2_est[(row+1):min(length(var_o2_est),(row+n_days))]
       obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
       if(length(obs_toAdd)<n_days){
         obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))
       }
       results[row,(2+n_days):(1+2*n_days)]<- obs_toAdd
-      results[row,2:(1+n_days)]<-tail(mean_o2_est, n = n_days)
-      results[row,(2+2*n_days):(1+3*n_days)]<-tail(sd_o2_est, n = n_days)
+      results[row,2:(1+n_days)]<-c(mean_o2_est_short,rep(NA,(n_days-length(mean_o2_est_short))))
+      results[row,(2+2*n_days):(1+3*n_days)]<-c(var_o2_est_short,rep(NA,(n_days-length(var_o2_est_short))))
       results[row,1]<-today
       if(gif == TRUE){
         plot_o2(est_thisYear, today, start, stop)
@@ -305,7 +306,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
         write.csv(est_thisYear$Y[1,,],paste(dir2,"/",format(today,"%d%b%y"),".csv",sep = ""))
       }
       today <- today+run_space
-    }else{
+    }else{ #If there was an error
       results[row,1]<-today
       results[row:nrow(results),(2+2*n_days):(1+3*n_days)]<-0
       today<-stop

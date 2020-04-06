@@ -181,7 +181,7 @@ get_drivers = function(drivers_df, model_dates, n_drivers, driver_colnames, driv
   for(i in 1:n_drivers){
     for(j in 1:n_step){
       if(driver_uncert == F){
-        if(j > today_n){
+        if(j >= today_n){
           driver_cv[i]<-0
         }
       }
@@ -260,7 +260,7 @@ EnKF = function(n_en = 100,
   stop = as.Date(stop)
   dates = get_model_dates(model_start = start, model_stop = stop, time_step = time_step)
   n_step = length(dates)
-  today_n = as.numeric(difftime(today,start))
+  today_n = as.numeric(difftime(today,start))+1
   
   # get observation matrix
   obs_df = obs_file
