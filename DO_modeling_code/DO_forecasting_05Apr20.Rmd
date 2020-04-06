@@ -29,7 +29,6 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
 
 To do:
-- Make uncertainty calculations only based on forecasts (not model)
 - I'm not sure how to do process uncertainty?
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 - What am I doing with training vs test data? Is there a way to automatically get the best parameters? 
@@ -58,6 +57,7 @@ Done:
 - Conclusion: Observation uncertainty is not a thing. Models need to be different already to get adjusted by enkf
 - Made graphs of partitioned uncertainty as a function of forecast horizon and day of summer for each year DONE
 - Standardize graphs by the amount of error DONE
+- Make uncertainty calculations only based on forecasts (not model) DONE
 
 
 
@@ -183,12 +183,12 @@ plot_o2(test_2017,stop,start,stop)
 
 Run forecasts!
 ```{r}
-for(uncert in c("init","driver","all")){ #add "param" back here!
+for(uncert in c("param","all")){ #add "param" back here!
   run_space <- 1 #Number of days between runs of the model
   n_days <- 14 #Forecast horizon
   model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
   gif = F
-  #uncert = "param" #Options = "all","init","driver","param"
+  #uncert = "driver" #Options = "all","init","driver","param"
   date <- format(Sys.Date(),"%d%b%y")
   
   #2013
@@ -438,8 +438,8 @@ all_sd = all[,c(2,seq(31,46))]%>%
 all_sd_std = all_sd%>%
   filter(uncert !="all")%>%
   group_by(TODAY)%>%
-  mutate(TOTAL_7 = sum(PLUS7_sd),
-         TOTAL_14 = sum(PLUS14_sd))
+  mutate(TOTAL_7 = sum(PLUS7_var),
+         TOTAL_14 = sum(PLUS14_var))
 
 ```
 
@@ -454,7 +454,7 @@ Uncertainty plots
 
 all_sd_std %>%
   filter(uncert != "all")%>%
-  ggplot(aes(x = as.Date(TODAY),y= PLUS7_sd/TOTAL_7, fill = uncert))+
+  ggplot(aes(x = as.Date(TODAY),y= PLUS7_var/TOTAL_7, fill = uncert))+
   geom_bar(stat = "identity", width = 1)+
   facet_wrap("year", scales = "free_x")+
   labs(fill = "Uncertainty")+
@@ -464,7 +464,7 @@ all_sd_std %>%
 
 all_sd_std %>%
   filter(uncert != "all")%>%
-  ggplot(aes(x = as.Date(TODAY),y= PLUS14_sd/TOTAL_14, fill = uncert))+
+  ggplot(aes(x = as.Date(TODAY),y= PLUS14_var/TOTAL_14, fill = uncert))+
   geom_bar(stat = "identity", width = 1)+
   facet_wrap("year", scales = "free_x")+
   labs(fill = "Uncertainty")+
@@ -474,48 +474,44 @@ all_sd_std %>%
 
 all_sd %>%
   filter(uncert != "all")%>%
-  ggplot(aes(x = as.Date(TODAY),y= PLUS7_sd, fill = uncert))+
+  ggplot(aes(x = as.Date(TODAY),y= PLUS7_var, fill = uncert))+
   geom_bar(stat = "identity", width = 1)+
   facet_wrap("year", scales = "free_x")+
-  labs(fill = "Uncertainty")+
+  scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param"), 
+                      labels = c("driver","initial cond","parameter"))+
   xlab("")+
   ylab("Variance (7 day horizon)")+
-  geom_line(aes(x = as.Date(TODAY), y = PLUS7_sd), data = all_sd %>% filter(uncert == "all"))
+  geom_line(aes(x = as.Date(TODAY), y = PLUS7_var, lty=uncert), data = all_sd %>% filter(uncert == "all"))+
+  scale_linetype_discrete(name = "",labels = c("all"))
 
 all_sd %>%
   filter(uncert != "all", year!=2017)%>%
-  ggplot(aes(x = as.Date(TODAY),y= PLUS14_sd, fill = uncert))+
+  ggplot(aes(x = as.Date(TODAY),y= PLUS14_var, fill = uncert))+
   geom_bar(stat = "identity", width = 1)+
   facet_wrap("year", scales = "free_x")+
   scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param"), 
                       labels = c("driver","initial cond","parameter"))+
   xlab("")+
   ylab("Variance (14 day horizon)")+
-  geom_line(aes(x = as.Date(TODAY), y = PLUS14_sd, lty=uncert), data = all_sd %>% filter(uncert == "all", year !=2017))+
+  geom_line(aes(x = as.Date(TODAY), y = PLUS14_var, lty=uncert), data = all_sd %>% filter(uncert == "all", year !=2017))+
   scale_linetype_discrete(name = "",labels = c("all"))
 
 SDs_final = SDs%>%
-  gather(day,sd,1:14)%>%
-  mutate(day_n = as.numeric(gsub("_sd",gsub("PLUS",day,replacement = ""),replacement = "")))%>%
+  gather(day,var,1:14)%>%
+  mutate(day_n = as.numeric(gsub("_var",gsub("PLUS",day,replacement = ""),replacement = "")))%>%
   select(-day)
 
 SDs_final%>%
   filter(uncert != "all")%>%
-  ggplot(aes(x = day_n,y=sd, fill = uncert))+
+  ggplot(aes(x = day_n,y=var, fill = uncert))+
   geom_bar(stat = "identity")+
   facet_wrap("year")+
-  labs(fill = "Uncertainty")+
+  scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param"), 
+                      labels = c("driver","initial cond","parameter"))+
   xlab("Forecast Horizon (days)")+
-  ylab("Variance")
-
-SDs_final%>%
-  filter(uncert == "all")%>%
-  ggplot(aes(x = day_n,y=sd, fill = uncert))+
-  geom_bar(stat = "identity")+
-  facet_wrap("year")+
-  labs(fill = "Uncertainty")+
-  xlab("Forecast Horizon (days)")+
-  ylab("Variance")
+  ylab("Variance")+
+  geom_line(aes(x = day_n, y = var, lty=uncert), data = SDs_final %>% filter(uncert == "all"))+
+  scale_linetype_discrete(name = "",labels = c("all"))
 ```
 
 

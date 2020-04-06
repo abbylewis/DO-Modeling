@@ -328,8 +328,11 @@ EnKF = function(n_en = 100,
   # start modeling
   for(t in 2:n_step){
     if(param_uncert == F){ #If this run does not include parameter uncertainty, set all /future/ parameters to the mean today
-      if(t==today_n+1){
-        Y[2:5, t-1,] = mean(Y[2:5, t-1,])
+      if(t>=today_n+1){ #If we are forecasting /tomorrow/
+        Y[2, t-1,] = mean(Y[2, t-1,])
+        Y[3, t-1,] = mean(Y[3, t-1,])
+        Y[4, t-1,] = mean(Y[4, t-1,])
+        Y[5, t-1,] = mean(Y[5, t-1,])
       }
     }
     if(init_uncert==F){ #If this run does not include initial condition uncertainty, make all states the same today
