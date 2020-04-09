@@ -113,7 +113,7 @@ get_obs_matrix = function(obs_df, model_dates, n_step, n_states){
 ##' @param cur_step current model timestep
 kalman_filter = function(Y, R, obs, H, n_en, cur_step){
   
-  cur_obs = obs[ , , cur_step]
+  cur_obs = obs[ , , cur_step] #ADD OBS ERROR
   
   #cur_obs = ifelse(is.na(cur_obs), 0, cur_obs) # setting NA's to zero so there is no 'error' when compared to estimated states
   

@@ -1,8 +1,14 @@
 #Created by ASL 05Apr20
 #Dealing with uncertinaty in EnKF functions
 
-
-sd_sum <- function(sd_df,name,year){
+#' Sumarize variance for uncertainty analysis
+#' 
+#' @param sd_df full dataframe of variance
+#' @param name type of uncertainty
+#' @param year year these data are from
+#' @return data.frame with summarized variance
+#' 
+sd_sum <- function(sd_df,name,year){ 
   out <- sd_df%>%
     filter(!is.na(TODAY))%>%
     select(seq(31,44))%>%
@@ -13,6 +19,14 @@ sd_sum <- function(sd_df,name,year){
 }
 
 
+
+#' Take a results file and calculate RMSE for each forecast horizon
+#' 
+#' @param n_days number of days forecasted
+#' @param results results file from EnKF
+#' @param obs
+#' @reutrn data.frame with RMSE for each forecast horizon this year
+#' 
 createRmseDF_filt <- function(n_days, results, obs){
   results <- as.data.frame(results)
   obs_dates <- as.numeric(obs$datetime)
@@ -21,6 +35,16 @@ createRmseDF_filt <- function(n_days, results, obs){
   return(rmse_filt)
 }
 
+
+
+#' Calculate the average temperature, oxygen concentration, and hypolimnetic volume as inputs to the model
+#' 
+#' @param start vector of start dates for each year
+#' @param stop vector of stop dates for each year
+#' @param CTD CTD data file
+#' @param SSS SSS driver 
+#' @return average temperature, oxygen concentration, and hypolimnetic volume as a list
+#' 
 calc_avg <- function(start,stop,CTD,SSS){
   dates_init <- tibble(start,stop)
   dates <- dates_init %>%
@@ -59,6 +83,17 @@ calc_avg <- function(start,stop,CTD,SSS){
   return(list(avg_temp,avg_o2,avg_hypoVolume))
 }
 
+
+
+#' Creates an input dataframe for this year
+#' 
+#' @param start start date for this year
+#' @param stop stop date for this year
+#' @param CTD CTD data file
+#' @param SSS SSS driver file
+#' @return dataframe of inputs for this year, including oxygen concentration, temperature, thermocline depth, oxygenation (scfm)
+#' chlorophyll-a, and surface area
+#' 
 inputs_year<- function(start, stop, CTD, SSS){
   dates = data.frame(seq(start,stop,by = "days"))
   colnames(dates) <- "Date"
@@ -83,6 +118,18 @@ inputs_year<- function(start, stop, CTD, SSS){
   inputs
 }
 
+
+
+#' Epic function to run the EnKF at a given time point
+#' 
+#' @param inputs inputs file for this year 
+#' @param obs all observations
+#' @param today today's date
+#' @param n_days forecast horizon
+#' @param model_name model scenario ("normal","temp","o2","sss")
+#' @param uncert type of uncertainty ("all", "driver","param","init")
+#' @return enKF results
+#' 
 run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all"){
   obs = obs%>%
     filter(datetime<=today)
@@ -155,6 +202,12 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
   return(est_out)
 }
 
+
+
+#' Function to plot the parameter values over time
+#' 
+#' @param est_out output of the EnKF
+#' 
 plot_hindcast <- function(est_out){
   par(mfrow = c(2,2))
   param_names = c("R20","theta","ko2","sss_scalar")
@@ -175,6 +228,15 @@ plot_hindcast <- function(est_out){
 }
 
 
+
+#' Function to plot oxygen concentrations over time
+#' 
+#' @param est_out output of the EnKF
+#' @param today today's date
+#' @param start start date for this year
+#' @param stop stop date for this year
+#' @param n_days forecast horizon
+#' 
 plot_o2 = function(est_out, today, start, stop, n_days = 14){
   mean_o2_est = apply(est_out$Y[1,,], 1, FUN = mean)
   plot(mean_o2_est ~ est_out$dates, type ='l', 
@@ -197,6 +259,14 @@ plot_o2 = function(est_out, today, start, stop, n_days = 14){
   #   code = 3, length = 0.1, angle = 90, col = 'red')
 }
 
+
+
+#' Function to plot a given parameter over time
+#' 
+#' @param est_out results of kalman filter
+#' @param num parameter number
+#' @param name of parameter
+#' 
 plot_param = function(est_out,num,name = "Parameter value"){
   num = num+1
   mean_param_est = apply(est_out$Y[num,,], 1, FUN = mean)
@@ -209,6 +279,16 @@ plot_param = function(est_out,num,name = "Parameter value"){
   lines(mean_param_est ~ est_out$dates, col = 'black', lwd = 2)
 }
 
+
+
+#' Function to create an empty dataframe to hold predctions (forecasted), future observations, and 
+#' variance of ensemples at each forecast horizon
+#' 
+#' @param start start date for this year
+#' @param stop stop date for this year
+#' @return empty results dataframe to hold predctions (forecasted), future observations, and 
+#' variance of ensemples at each forecast horizon
+#' 
 createResultsDF <- function(start, stop){
   days <- as.numeric(difftime(stop,start, units = "days"))
   rows <- floor(days/run_space)+1
@@ -221,6 +301,15 @@ createResultsDF <- function(start, stop){
   return(results)
 }
 
+
+
+#' Function to add all dates to the observation file (unsampled dates should be NA)
+#' 
+#' @param start start date for the summer
+#' @param stop stop date for the summer
+#' @param obs observation dataframe (ctd)
+#' @return file with all dates this summer and oxygen observations where applicable
+#' 
 extendObsDF <- function(start,stop,obs){
   dates = data.frame(seq(start,stop,by = "days"))
   colnames(dates) <- "datetime"
@@ -229,6 +318,15 @@ extendObsDF <- function(start,stop,obs){
   return(obs_allDates)
 }
 
+
+
+#' Function to create a dataframe of RMSE, leaving out the first 14 days
+#' 
+#' @param n_days forecast horizon
+#' @param results results from enkf
+#' @param cali calibration period
+#' @return RMSE dataframe
+#' 
 createRmseDF <- function(n_days,results, cali = 14){
   n <- seq(1,n_days)
   val <- rep(NA,n_days)
@@ -244,6 +342,26 @@ createRmseDF <- function(n_days,results, cali = 14){
   rmse_thisYear
 }
 
+
+
+#' Epic function to run everything!
+#' 
+#' @param start start date for the summer
+#' @param stop stop date for the summer 
+#' @param n_days forecast horizon
+#' @param run_space days between runs (1 = run every day)
+#' @param obs observation file
+#' @param gif should images be stored and create a gif?
+#' @param archiveForecasts should forecasts be archived?
+#' @param remove should images be removed after making a gif?
+#' @param delay how much time between images in the gif
+#' @param model_name which model? ("normal","temp","o2","sss")
+#' @param avg_o2 calculated average amount of oxygen
+#' @param avg_temp calculated average temperature
+#' @param uncert what type of uncertainty? ("all", "driver","param","init")
+#' @return results dataframe with predctions (forecasted), future observations, and 
+#' variance of ensemples at each forecast horizon
+#' 
 runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30, model_name = "full",avg_o2,avg_temp,uncert){
   #Model types = full (""), temp ("_temp"), o2 ("_o2")
   if(model_name == "full"){model = ""}
@@ -328,6 +446,16 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
 }
 
 
+
+#' Function to run a persistence forecast 
+#' 
+#' @param start start date
+#' @param stop stop date
+#' @param n_days forecast horizon
+#' @param run_space how often to run forecast (days; 1 = run every day)
+#' @param obs observations data file
+#' @return results dataframe with persistence forecasts
+#' 
 persistenceForecast <- function(start,stop,n_days,run_space,obs){
   #Create results dataframe
   results<- createResultsDF(start, stop)
