@@ -1,0 +1,63 @@
+---
+title: "Shiny"
+author: "Abby Lewis"
+date: "4/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load packages
+library(shiny)
+library(shinythemes)
+library(tidyverse)
+library(readr)
+library(lubridate)
+
+# Define UI
+ui <- fluidPage(theme = shinytheme("lumen"),
+  titlePanel("DO forecast"),
+  sidebarPanel(
+    # Select type of trend to plot
+    selectInput(inputId = "model", label = strong("Model Type"),
+                choices = c("SSS only" ="_sss","All" = "_all","Oxygen only" = "_o2","Temperature only" = "_temp"),
+                selected = "_sss"),
+    selectInput(inputId = "date",label = strong("Date"), choices = c("010","020"), selected = "020")
+
+    # Select date range to be plotted
+    #dateInput("date", strong("Forecast date"), value = "2019-08-01",
+     #              min = "2013-06-01", max = "2019-10-31"),
+  ),
+
+    # Output: 
+  mainPanel(
+    imageOutput("preImage")
+  )
+)
+
+#Define server function
+server <- function(input, output, session) {
+  # Send a pre-rendered image, and don't delete the image after sending it
+  output$preImage <- renderImage({
+    #year <- year(input$date)
+    year <- 2019
+    model <- input$model
+    date <- input$date
+    if(model == "_all"){model <- ""}
+    # When input$n is 3, filename is ./images/image3.jpeg
+    filename <- paste('../DO_modeling_figures/29Mar20/',year,model,'/forecast', date, '.png', sep='')
+
+    # Return a list containing the filename and alt text
+    list(src = filename,
+         alt = paste("Forecast"))
+
+  }, deleteFile = FALSE)
+}
+
+# Create Shiny object
+shinyApp(ui = ui, server = server)
+```
+
