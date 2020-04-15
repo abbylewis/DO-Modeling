@@ -51,7 +51,7 @@ calc_avg <- function(start,stop,CTD,SSS){
     mutate(year = year(start))%>%
     select(year,start,stop)
   
-  allDays<-data.frame(seq(min(start),max(stop),by = "days"))
+  allDays<-tibble(seq(min(start),max(stop),by = "days"))
   colnames(allDays) <- "Date"
   inputs = allDays %>%
     left_join(CTD %>%
@@ -127,7 +127,7 @@ inputs_year<- function(start, stop, CTD, SSS){
 #' @param today today's date
 #' @param n_days forecast horizon
 #' @param model_name model scenario ("normal","temp","o2","sss")
-#' @param uncert type of uncertainty ("all", "driver","param","init")
+#' @param uncert type of uncertainty ("all", "driver","param","init","proc")
 #' @return enKF results
 #' 
 run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all"){
@@ -174,6 +174,7 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
                    obs_cv = obs_cv,
                    param_cv = param_cv,
                    driver_cv = driver_cv, 
+                   proc_sd = proc_sd,
                    init_cond_cv = init_cond_cv,
                    model = no_O2_model,
                    today = today,
@@ -194,6 +195,7 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
                    obs_cv = obs_cv,
                    param_cv = param_cv,
                    driver_cv = driver_cv, 
+                   proc_sd = proc_sd,
                    init_cond_cv = init_cond_cv,
                    model = O2_model,
                    today = today,

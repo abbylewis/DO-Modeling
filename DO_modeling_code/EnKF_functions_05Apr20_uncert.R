@@ -227,6 +227,7 @@ EnKF = function(n_en = 100,
                 param_cv,
                 driver_cv,
                 init_cond_cv,
+                proc_sd,
                 model,
                 today,
                 uncert){
@@ -235,24 +236,35 @@ EnKF = function(n_en = 100,
     driver_uncert = F
     param_uncert = T
     init_uncert = F
+    proc_uncert = F
   }
   
   if(uncert == "driver"){
     driver_uncert = T
     param_uncert = F
     init_uncert = F
+    proc_uncert = F
   }
   
   if(uncert == "init"){
     driver_uncert = F
     param_uncert = F
     init_uncert = T
+    proc_uncert = F
   }
   
   if(uncert == "all"){
     driver_uncert = T
     param_uncert = T
     init_uncert = T
+    proc_uncert = T
+  }
+  
+  if(uncert == "proc"){
+    driver_uncert = F
+    param_uncert = F
+    init_uncert = F
+    proc_uncert = T
   }
   
   n_en = n_en
@@ -349,8 +361,11 @@ EnKF = function(n_en = 100,
                               inputs = drivers[t-1,,n])
       model_output<-as.data.frame(t(unlist(model_output_temp)))
       colnames(model_output)<-c("O2_mgL","Two","Three","Four","Five")
-      Y[1 , t, n] = model_output$O2_mgL+Y[1, t-1, n] # store in Y vector. 
+      if(proc_uncert == T){
+        delta_o2 <- Y[1, t-1, n]+rnorm(1,mean = 0, sd = proc_sd) #Add process error
+      } else {delta_o2 <- Y[1, t-1, n]}
       #For oxygen I am adding the differential change to the original value
+      Y[1 , t, n] = model_output$O2_mgL+delta_o2 # store in Y vector. 
       if(Y[1 , t, n]<0){Y[1 , t, n]<-0}
       Y[2 , t, n] = model_output[,2]
       Y[3 , t, n] = model_output[,3]

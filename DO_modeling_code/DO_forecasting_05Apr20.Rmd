@@ -29,7 +29,10 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
 
 To do:
-- I'm not sure how to do process uncertainty?
+- Check observation error
+- Research oxygen max
+- Think about forecast story
+- Run forecasts in Bayes model (training data) to get parameter values
 - Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 - What am I doing with training vs test data? Is there a way to automatically get the best parameters? 
   - Read about what other people are doing
@@ -58,6 +61,7 @@ Done:
 - Made graphs of partitioned uncertainty as a function of forecast horizon and day of summer for each year DONE
 - Standardize graphs by the amount of error DONE
 - Make uncertainty calculations only based on forecasts (not model) DONE
+- Add process error DONE
 
 
 
@@ -87,10 +91,11 @@ param_cv = c(R20 = .1,
              theta = .01,
              ko2 = .1,
              sss_scalar = .1)
-driver_cv = c(SSS = .2,# This is the main source of uncertainty right now
-              temp = .2,
+driver_cv = c(SSS = .1,# This is the main source of uncertainty right now
+              temp = .1,
               o2_mgL = 0) # Coefficient of variation of driver data 
 init_cond_cv = .1
+proc_sd <- .5
 obs_cv = 0.05
 ```
 
@@ -116,10 +121,13 @@ median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
 SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
 SSS$time <- as.Date(SSS$time)
   
-
-start = as.Date(c("2013-04-30","2014-06-02","2015-06-08","2016-06-01","2017-06-28","2018-06-04","2019-06-03"))
-stop = as.Date(c("2013-08-08","2014-10-15","2015-09-28","2016-10-07","2017-07-12","2018-10-22","2019-10-30"))
-avgs <- calc_avg(start,stop,CTD,SSS)
+#start_all = as.Date(c("2013-05-30","2014-06-02","2015-05-28","2016-06-01","2017-06-28","2018-06-04","2019-06-03"))
+#stop_all = as.Date(c("2013-09-25","2014-10-04","2015-09-28","2016-09-30","2017-07-12","2018-10-22","2019-10-30"))
+#write.csv(data.frame(start_all,stop_all),"../DO_modeling_data/start_stop.csv")
+start_stop <- read.csv("../DO_modeling_data/start_stop.csv")
+start_all = as.Date(start_stop$start_all)
+stop_all = as.Date(start_stop$stop_all)
+avgs <- calc_avg(start_all,stop_all,CTD,SSS)
 avg_temp<-unlist(avgs[1])
 avg_o2<-unlist(avgs[2])
 avg_hypoVolume<-unlist(avgs[3])
@@ -131,8 +139,8 @@ CTD$hypoVolume<-avg_hypoVolume
 Testing: keep only training years!
 ```{r}
 #2013
-start = as.Date("2013-05-30")
-stop = as.Date("2013-09-25")
+start = start_all[year(start_all)==2013]
+stop = stop_all[year(stop_all)==2013]
 inputs_2013 <- inputs_year(start,stop,CTD,SSS)
 test_2013 <- run_do_hindcast(inputs_2013,obs,stop)
 plot_o2(test_2013,stop,start,stop)
@@ -141,8 +149,8 @@ plot(inputs_2013$Date,inputs_2013$Temp)
 #pairs(inputs_2013)
 
 #2014
-start = as.Date("2014-06-02")
-stop = as.Date("2014-10-04")
+start = start_all[year(start_all)==2014]
+stop = stop_all[year(stop_all)==2014]
 inputs_2014 <- inputs_year(start,stop,CTD,SSS)
 test_2014 <- run_do_hindcast(inputs_2014,obs,stop)
 plot_o2(test_2014,stop,start,stop)
@@ -151,8 +159,8 @@ plot_o2(test_2014,stop,start,stop)
 #plot(inputs_2014$Date,inputs_2014$Chla)
 
 #2015
-start = as.Date("2015-05-28")
-stop = as.Date("2015-09-28")
+start = start_all[year(start_all)==2015]
+stop = stop_all[year(stop_all)==2015]
 inputs_2015 <- inputs_year(start,stop,CTD,SSS)
 test_2015 <- run_do_hindcast(inputs_2015,obs,stop)
 plot_o2(test_2015,stop,start,stop)
@@ -160,8 +168,8 @@ plot_o2(test_2015,stop,start,stop)
 plot(inputs_2015$Date,inputs_2015$scfm)
 
 #2016
-start = as.Date("2016-06-01")
-stop = as.Date("2016-09-30")
+start = start_all[year(start_all)==2016]
+stop = stop_all[year(stop_all)==2016]
 inputs_2016 <- inputs_year(start,stop,CTD,SSS)
 test_2016 <- run_do_hindcast(inputs_2016,obs,stop)
 plot_o2(test_2016,stop,start,stop)
@@ -169,8 +177,8 @@ plot_o2(test_2016,stop,start,stop)
 plot(inputs_2016$Date,inputs_2016$Temp)
 
 #2017
-start = as.Date("2017-06-28")
-stop = as.Date("2017-07-12")
+start = start_all[year(start_all)==2017]
+stop = stop_all[year(stop_all)==2017]
 inputs_2017 <- inputs_year(start,stop,CTD,SSS)
 test_2017 <- run_do_hindcast(inputs_2017,obs,stop)
 plot_o2(test_2017,stop,start,stop)
@@ -183,17 +191,17 @@ plot_o2(test_2017,stop,start,stop)
 
 Run forecasts!
 ```{r}
-for(uncert in c("param","all")){ #add "param" back here!
+#for(uncert in c("param","all")){ 
   run_space <- 1 #Number of days between runs of the model
   n_days <- 14 #Forecast horizon
   model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
   gif = F
-  #uncert = "driver" #Options = "all","init","driver","param"
+  uncert = "driver" #Options = "all","init","driver","param","proc"
   date <- format(Sys.Date(),"%d%b%y")
   
   #2013
-  start = as.Date("2013-05-30")
-  stop = as.Date("2013-09-04")
+  start = start_all[year(start_all)==2013]
+  stop = stop_all[year(stop_all)==2013]
   results_2013 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
   dir.create(paste("../DO_modeling_results/",date,sep = ""))
   write.csv(results_2013,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
@@ -203,8 +211,8 @@ for(uncert in c("param","all")){ #add "param" back here!
   rmse_2013_filt
   
   #2014
-  start = as.Date("2014-06-02")
-  stop = as.Date("2014-10-04")
+  start = start_all[year(start_all)==2014]
+  stop = stop_all[year(stop_all)==2014]
   results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
   write.csv(results_2014,paste("../DO_modeling_results/",date,"/forecast_2014_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2014_filt <- createRmseDF_filt(n_days, results_2014, obs) # Calculate rmse for days where there was an observation
@@ -213,8 +221,8 @@ for(uncert in c("param","all")){ #add "param" back here!
   rmse_2014_filt
   
   #2015
-  start = as.Date("2015-05-28")
-  stop = as.Date("2015-09-28")
+  start = start_all[year(start_all)==2015]
+  stop = stop_all[year(stop_all)==2015]
   results_2015 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
   write.csv(results_2015,paste("../DO_modeling_results/",date,"/forecast_2015_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2015_filt <- createRmseDF_filt(n_days, results_2015, obs)
@@ -223,8 +231,8 @@ for(uncert in c("param","all")){ #add "param" back here!
   rmse_2015_filt
   
   #2016
-  start = as.Date("2016-06-01")
-  stop = as.Date("2016-10-07")
+  start = start_all[year(start_all)==2016]
+  stop = stop_all[year(stop_all)==2016]
   results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
   write.csv(results_2016,paste("../DO_modeling_results/",date,"/forecast_2016_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2016_filt <- createRmseDF_filt(n_days, results_2016, obs)
@@ -233,16 +241,16 @@ for(uncert in c("param","all")){ #add "param" back here!
   rmse_2016_filt
   
   #2017
-  start = as.Date("2017-06-28")
-  stop = as.Date("2017-07-12")
+  start = start_all[year(start_all)==2017]
+  stop = stop_all[year(stop_all)==2017]
   results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
   write.csv(results_2017,paste("../DO_modeling_results/",date,"/forecast_2017_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2017_filt <- createRmseDF_filt(n_days, results_2017,obs)
   rmse_2017 <- createRmseDF(n_days, results_2017)
   
   #2018
-  start = as.Date("2018-06-04")
-  stop = as.Date("2018-10-01")
+  start = start_all[year(start_all)==2018]
+  stop = stop_all[year(stop_all)==2018]
   results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
   write.csv(results_2018,paste("../DO_modeling_results/",date,"/forecast_2018_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2018_filt <- createRmseDF_filt(n_days, results_2018,obs)
@@ -251,15 +259,15 @@ for(uncert in c("param","all")){ #add "param" back here!
   rmse_2018_filt
   
   #2019
-  start = as.Date("2019-06-03")
-  stop = as.Date("2019-10-02")
+  start = start_all[year(start_all)==2019]
+  stop = stop_all[year(stop_all)==2019]
   results_2019 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
   write.csv(results_2019,paste("../DO_modeling_results/",date,"/forecast_2019_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2019_filt <- createRmseDF_filt(n_days, results_2019,obs)
   rmse_2019 <- createRmseDF(n_days, results_2019)
   rmse_2019
   rmse_2019_filt
-}
+#}
 
 
 
