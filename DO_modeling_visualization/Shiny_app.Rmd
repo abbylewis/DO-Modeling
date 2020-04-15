@@ -7,34 +7,54 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-```
-
-```{r}
 # Load packages
 library(shiny)
 library(shinythemes)
 library(tidyverse)
 library(readr)
 library(lubridate)
+```
+
+```{r, include=FALSE}
+start_stop <- read.csv("start_stop.csv")
+start = as.Date(start_stop$start_all)
+stop = as.Date(start_stop$stop_all)
+year<-2019
 
 # Define UI
 ui <- fluidPage(theme = shinytheme("lumen"),
-  titlePanel("DO forecast"),
+  titlePanel(h1("DO forecast",align = "center")),
   sidebarPanel(
-    # Select type of trend to plot
     selectInput(inputId = "model", label = strong("Model Type"),
                 choices = c("SSS only" ="_sss","All" = "_all","Oxygen only" = "_o2","Temperature only" = "_temp"),
-                selected = "_sss"),
-    selectInput(inputId = "date",label = strong("Date"), choices = c("010","020"), selected = "020")
-
-    # Select date range to be plotted
-    #dateInput("date", strong("Forecast date"), value = "2019-08-01",
-     #              min = "2013-06-01", max = "2019-10-31"),
+                selected = "_all"),
+    selectInput(inputId = "year", label = strong("Forecast Year"),
+                choices = c("2019","2018","2017","2016","2015","2014","2013"),
+                selected = "2019"),
+    
+    conditionalPanel(
+    condition = "input.gif == false",
+    sliderInput("date", strong("Forecast date"), value = min(start[year(start)==year]),
+              min = min(start[year(start)==year]), max = max(stop[year(stop)==year]), step = 1)
+    ),
+    checkboxInput("gif","Display forecasts as gif", value = F),
+    checkboxInput("eval","Display forecast evaluation", value = F)
   ),
 
     # Output: 
   mainPanel(
-    imageOutput("preImage")
+    imageOutput("preImage"),br(),br(),
+    textOutput("forecast_date"),br(),
+    conditionalPanel(
+      condition = "input.eval == true",
+      h3("Forecast evaluation: RMSE"),
+      imageOutput("rmse"),
+      h3("Forecast evaluation: Uncertainty Analysis"),
+      h4("Partitioned uncertainty over time"),
+      imageOutput("uncert_year"),br(),br(),
+      h4("Partitioned uncertainty as a function of forecast horizon"),
+      imageOutput("uncert_all")
+    )
   )
 )
 
@@ -42,19 +62,67 @@ ui <- fluidPage(theme = shinytheme("lumen"),
 server <- function(input, output, session) {
   # Send a pre-rendered image, and don't delete the image after sending it
   output$preImage <- renderImage({
-    #year <- year(input$date)
-    year <- 2019
+    year <- input$year
     model <- input$model
-    date <- input$date
+    date <- as.Date(input$date)
+    start_thisYear = as.Date(start_stop$start_all[year(start_stop$start_all) == year])
+    date_num = formatC(as.numeric(difftime(date,start_thisYear))+1, width = 3, format = "d", flag = "0")
     if(model == "_all"){model <- ""}
-    # When input$n is 3, filename is ./images/image3.jpeg
-    filename <- paste('../DO_modeling_figures/29Mar20/',year,model,'/forecast', date, '.png', sep='')
-
+    filename <- paste('29Mar20/',year,model,'/forecast', date_num, '.png', sep='')
+    if(input$gif == T){
+      filename <- paste('29Mar20/',year,model,'/animated_forecast.gif',sep="")
+    }
     # Return a list containing the filename and alt text
     list(src = filename,
-         alt = paste("Forecast"))
-
-  }, deleteFile = FALSE)
+         alt = paste("Forecast failed to load"))
+  }, deleteFile = FALSE
+  )
+  
+  
+  output$forecast_date <- renderText({
+    paste("Forecast generated on 29 March 2020")
+  })
+  
+  
+  output$rmse <- renderImage({
+    filename <- "./29Mar20/RMSE_all.jpeg"
+    this_width <- session$clientData$output_renderImage_width
+    correct_width <- session$clientData$output_preImage_width
+    this_height <- session$clientData$output_renderImage_height
+    list(src = filename,
+         width = correct_width,
+         height = this_height*correct_width/this_width,
+         alt = paste("RMSE failed to load"))
+  }, deleteFile = F)
+  
+  
+  output$uncert_all <- renderImage({
+    filename <- "./29Mar20/uncert_all.png"
+    height <- session$clientData$output_preImage_height
+    list(src = filename,
+         height=height,
+         alt = paste("Uncertainty figure failed to load"))
+  }, deleteFile = F)
+  
+  
+    output$uncert_year <- renderImage({
+    filename <- "./29Mar20/uncert_year.png"
+    height <- session$clientData$output_preImage_height
+    list(src = filename,
+         height=height,
+         alt = paste("Second uncertainty figure failed to load"))
+  }, deleteFile = F)
+  
+    
+  output$forecast_date <- renderText({
+    paste("Forecast generated on 29 March 2020")
+  })
+  
+  
+  observe({
+    updateSliderInput(session, "date", value = min(start[year(start)==input$year]), min = min(start[year(start)==input$year]), 
+                      max = max(stop[year(stop)==input$year]))
+  })
 }
 
 # Create Shiny object
