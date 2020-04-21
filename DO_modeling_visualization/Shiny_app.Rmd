@@ -37,6 +37,7 @@ ui <- fluidPage(theme = shinytheme("lumen"),
     sliderInput("date", strong("Forecast date"), value = min(start[year(start)==year]),
               min = min(start[year(start)==year]), max = max(stop[year(stop)==year]), step = 1)
     ),
+    checkboxInput("param","Display parameter evolution", value = F),
     checkboxInput("gif","Display forecasts as gif", value = F),
     checkboxInput("eval","Display forecast evaluation", value = F)
   ),
@@ -45,6 +46,10 @@ ui <- fluidPage(theme = shinytheme("lumen"),
   mainPanel(
     imageOutput("preImage"),br(),br(),
     textOutput("forecast_date"),br(),
+    conditionalPanel(
+      condition = "input.param == true",
+      imageOutput("param")
+    ),
     conditionalPanel(
       condition = "input.eval == true",
       h3("Forecast evaluation: RMSE"),
@@ -105,7 +110,7 @@ server <- function(input, output, session) {
   }, deleteFile = F)
   
   
-    output$uncert_year <- renderImage({
+  output$uncert_year <- renderImage({
     filename <- "./15Apr20/uncert_season7.png"
     height <- session$clientData$output_preImage_height
     list(src = filename,
@@ -113,6 +118,15 @@ server <- function(input, output, session) {
          alt = paste("Second uncertainty figure failed to load"))
   }, deleteFile = F)
   
+  output$param <- renderImage({
+    model <- input$model
+    if(model == "_all"){model <- ""}
+    filename <- paste('15Apr20/',input$year,model,'/params.jpeg', sep='')
+    height <- session$clientData$output_preImage_height
+    list(src = filename,
+         height=height,
+         alt = paste("Parameter evolution figure failed to load"))
+  }, deleteFile = F)
     
   output$forecast_date <- renderText({
     paste("Forecast generated on 15 April 2020")

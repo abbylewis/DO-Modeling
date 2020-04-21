@@ -122,7 +122,7 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
            Date<=today+n_days)
   inputs[inputs$Date > today,c(2,3,4,5,7,8)] <- NA
   inputs = inputs%>%
-    mutate(Conc = na.approx(Conc, rule = 2),
+    mutate(Conc = na.approx(Conc, rule = 2), #rule = 2 makes points outside the range of observed points equal to the last observation
            Temp = na.approx(Temp, rule = 2),
            hypoVolume = na.approx(hypoVolume, rule = 2),
            thermo_depth = na.approx(thermo_depth, rule = 2),
@@ -130,12 +130,13 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
            SSS_add_conc = scfm*50*1000000/hypoVolume,
            Chla = na.approx(Chla, rule = 2),
            SA = na.approx(SA, rule = 2))
+  inputs$Temp[inputs$Date > today]<- inputs$Temp[inputs$Date == today]+temp_slope*seq(1,n_days)
   simulation_time <- as.numeric(difftime(min(today+n_days, stop), start, unit = "days")+1) #days
   #Assemble driver data
   model_inputs <- list(datetime = inputs$Date,
                        SSS = inputs$SSS_add_conc,
                        temp = inputs$Temp,
-                       O2_mgL = inputs$Conc)
+                       O2_mgL = inputs$Conc) #included for temp and SSS models (o2 = average o2)
   model_inputs<- data.frame(model_inputs)
   
   #Set initial conditions
