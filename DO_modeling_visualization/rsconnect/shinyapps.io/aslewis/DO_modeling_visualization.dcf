@@ -5,8 +5,8 @@ account: aslewis
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2096720
-bundleId: 2998068
+bundleId: 3022210
 url: https://aslewis.shinyapps.io/DO_modeling_visualization/
-when: 1586553900.82555
+when: 1587045953.47861
 asMultiple: FALSE
 asStatic: FALSE

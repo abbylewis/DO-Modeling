@@ -20,23 +20,6 @@ sd_sum <- function(sd_df,name,year){
 
 
 
-#' Take a results file and calculate RMSE for each forecast horizon
-#' 
-#' @param n_days number of days forecasted
-#' @param results results file from EnKF
-#' @param obs
-#' @reutrn data.frame with RMSE for each forecast horizon this year
-#' 
-createRmseDF_filt <- function(n_days, results, obs){
-  results <- as.data.frame(results)
-  obs_dates <- as.numeric(obs$datetime)
-  results_filtered <- results[results$TODAY %in% obs_dates,]
-  rmse_filt <- createRmseDF(n_days, results_filtered)
-  return(rmse_filt)
-}
-
-
-
 #' Calculate the average temperature, oxygen concentration, and hypolimnetic volume as inputs to the model
 #' 
 #' @param start vector of start dates for each year
@@ -344,6 +327,21 @@ createRmseDF <- function(n_days,results, cali = 14){
   rmse_thisYear
 }
 
+
+#' Take a results file and calculate RMSE for each forecast horizon starting from an observation
+#' 
+#' @param n_days number of days forecasted
+#' @param results results file from EnKF
+#' @param obs
+#' @reutrn data.frame with RMSE for each forecast horizon this year
+#' 
+createRmseDF_filt <- function(n_days, results, obs){
+  results <- as.data.frame(results)
+  obs_dates <- as.numeric(obs$datetime)
+  results_filtered <- results[results$TODAY %in% obs_dates,]
+  rmse_filt <- createRmseDF(n_days, results_filtered)
+  return(rmse_filt)
+}
 
 
 #' Epic function to run everything!

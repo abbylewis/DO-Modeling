@@ -68,9 +68,9 @@ server <- function(input, output, session) {
     start_thisYear = as.Date(start_stop$start_all[year(start_stop$start_all) == year])
     date_num = formatC(as.numeric(difftime(date,start_thisYear))+1, width = 3, format = "d", flag = "0")
     if(model == "_all"){model <- ""}
-    filename <- paste('29Mar20/',year,model,'/forecast', date_num, '.png', sep='')
+    filename <- paste('15Apr20/',year,model,'/forecast', date_num, '.png', sep='')
     if(input$gif == T){
-      filename <- paste('29Mar20/',year,model,'/animated_forecast.gif',sep="")
+      filename <- paste('15Apr20/',year,model,'/animated_forecast.gif',sep="")
     }
     # Return a list containing the filename and alt text
     list(src = filename,
@@ -80,12 +80,12 @@ server <- function(input, output, session) {
   
   
   output$forecast_date <- renderText({
-    paste("Forecast generated on 29 March 2020")
+    paste("Forecast generated on 15 April 2020")
   })
   
   
   output$rmse <- renderImage({
-    filename <- "./29Mar20/RMSE_all.jpeg"
+    filename <- "./15Apr20/RMSE_all.jpeg"
     this_width <- session$clientData$output_renderImage_width
     correct_width <- session$clientData$output_preImage_width
     this_height <- session$clientData$output_renderImage_height
@@ -97,7 +97,7 @@ server <- function(input, output, session) {
   
   
   output$uncert_all <- renderImage({
-    filename <- "./29Mar20/uncert_all.png"
+    filename <- "./15Apr20/uncert_horiz.png"
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height=height,
@@ -106,7 +106,7 @@ server <- function(input, output, session) {
   
   
     output$uncert_year <- renderImage({
-    filename <- "./29Mar20/uncert_year.png"
+    filename <- "./15Apr20/uncert_season7.png"
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height=height,
@@ -115,7 +115,7 @@ server <- function(input, output, session) {
   
     
   output$forecast_date <- renderText({
-    paste("Forecast generated on 29 March 2020")
+    paste("Forecast generated on 15 April 2020")
   })
   
   

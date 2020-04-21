@@ -29,6 +29,8 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
 
 To do:
+- Present parameters in shiny app
+- Linear regression of temperatures for each training year, use average
 - Check observation error
 - Research oxygen max
 - Think about forecast story
@@ -91,11 +93,11 @@ param_cv = c(R20 = .1,
              theta = .01,
              ko2 = .1,
              sss_scalar = .1)
-driver_cv = c(SSS = .1,# This is the main source of uncertainty right now
+driver_cv = c(SSS = .2,
               temp = .1,
               o2_mgL = 0) # Coefficient of variation of driver data 
-init_cond_cv = .1
-proc_sd <- .5
+init_cond_cv = 0.05
+proc_sd <- 0.1 #Calculated below (last code chunk)
 obs_cv = 0.05
 ```
 
@@ -191,12 +193,13 @@ plot_o2(test_2017,stop,start,stop)
 
 Run forecasts!
 ```{r}
-#for(uncert in c("param","all")){ 
+#for(uncert in c("param","all","init","proc","driver")){ 
+for(model_name in c("full","temp","o2","SSS")){ 
   run_space <- 1 #Number of days between runs of the model
   n_days <- 14 #Forecast horizon
-  model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
-  gif = F
-  uncert = "driver" #Options = "all","init","driver","param","proc"
+  #model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
+  gif = T
+  uncert = "all" #Options = "all","init","driver","param","proc"
   date <- format(Sys.Date(),"%d%b%y")
   
   #2013
@@ -270,28 +273,29 @@ Run forecasts!
 #}
 
 
+  rmse_total <- rmse_2013%>%
+    mutate(Year = 2013)%>%
+    full_join(rmse_2014 %>% mutate (Year = 2014))%>%
+    full_join(rmse_2015 %>% mutate (Year = 2015))%>%
+    full_join(rmse_2016 %>% mutate (Year = 2016))%>%
+    full_join(rmse_2017 %>% mutate (Year = 2017))%>%
+    full_join(rmse_2018 %>% mutate (Year = 2018))%>%
+    full_join(rmse_2019 %>% mutate (Year = 2019))
+  date <- format(Sys.Date(),"%d%b%y")
+  write.csv(rmse_total,paste("../DO_modeling_results/rmse_",model_name,"_",date,".csv", sep = ""))
+  
+  rmse_total_filt <- rmse_2013_filt%>%
+    mutate(Year = 2013)%>%
+    full_join(rmse_2014_filt %>% mutate (Year = 2014))%>%
+    full_join(rmse_2015_filt %>% mutate (Year = 2015))%>%
+    full_join(rmse_2016_filt %>% mutate (Year = 2016))%>%
+    full_join(rmse_2017_filt %>% mutate (Year = 2017))%>%
+    full_join(rmse_2018_filt %>% mutate (Year = 2018))%>%
+    full_join(rmse_2019_filt %>% mutate (Year = 2019))
+  date <- format(Sys.Date(),"%d%b%y")
+  write.csv(rmse_total,paste("../DO_modeling_results/rmse_filt_",model_name,"_",date,".csv", sep = ""))
 
-rmse_total <- rmse_2013%>%
-  mutate(Year = 2013)%>%
-  full_join(rmse_2014 %>% mutate (Year = 2014))%>%
-  full_join(rmse_2015 %>% mutate (Year = 2015))%>%
-  full_join(rmse_2016 %>% mutate (Year = 2016))%>%
-  full_join(rmse_2017 %>% mutate (Year = 2017))%>%
-  full_join(rmse_2018 %>% mutate (Year = 2018))%>%
-  full_join(rmse_2019 %>% mutate (Year = 2019))
-date <- format(Sys.Date(),"%d%b%y")
-#write.csv(rmse_total,paste("../DO_modeling_results/rmse_",model_name,"_",date,".csv", sep = ""))
-
-rmse_total_filt <- rmse_2013_filt%>%
-  mutate(Year = 2013)%>%
-  full_join(rmse_2014_filt %>% mutate (Year = 2014))%>%
-  full_join(rmse_2015_filt %>% mutate (Year = 2015))%>%
-  full_join(rmse_2016_filt %>% mutate (Year = 2016))%>%
-  full_join(rmse_2017_filt %>% mutate (Year = 2017))%>%
-  full_join(rmse_2018_filt %>% mutate (Year = 2018))%>%
-  full_join(rmse_2019_filt %>% mutate (Year = 2019))
-date <- format(Sys.Date(),"%d%b%y")
-#write.csv(rmse_total,paste("../DO_modeling_results/rmse_filt_",model_name,"_",date,".csv", sep = ""))
+}
 
 rmse_total%>%
   filter(Year!=2017)%>%
@@ -317,48 +321,48 @@ run_space <- 1 #Number of days between runs of the model
 n_days <- 14 #Forecast horizon
 
 #2013
-start = as.Date("2013-05-30")
-stop = as.Date("2013-09-04")
+start = start_all[year(start_all)==2013]
+stop = stop_all[year(stop_all)==2013]
 persist_2013 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2013 <- createRmseDF(n_days, persist_2013)
 
 #2014
-start = as.Date("2014-06-02")
-stop = as.Date("2014-10-04")
+start = start_all[year(start_all)==2014]
+stop = stop_all[year(stop_all)==2014]
 persist_2014 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2014 <- createRmseDF(n_days, persist_2014)
 
 #2015
-start = as.Date("2015-05-28")
-stop = as.Date("2015-09-28")
+start = start_all[year(start_all)==2015]
+stop = stop_all[year(stop_all)==2015]
 persist_2015 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2015 <- createRmseDF(n_days, persist_2015)
 
 #2016
-start = as.Date("2016-06-01")
-stop = as.Date("2016-10-07")
+start = start_all[year(start_all)==2016]
+stop = stop_all[year(stop_all)==2016]
 persist_2016 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2016 <- createRmseDF(n_days, persist_2016)
 
 #2017
-start = as.Date("2017-06-28")
-stop = as.Date("2017-07-12")
+start = start_all[year(start_all)==2017]
+stop = stop_all[year(stop_all)==2017]
 persist_2017 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2017 <- createRmseDF(n_days, persist_2017)
 
 #2018
-start = as.Date("2018-06-04")
-stop = as.Date("2018-10-01")
+start = start_all[year(start_all)==2018]
+stop = stop_all[year(stop_all)==2018]
 persist_2018 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2018 <- createRmseDF(n_days, persist_2018)
 
 #2019
-start = as.Date("2019-06-03")
-stop = as.Date("2019-10-02")
+start = start_all[year(start_all)==2019]
+stop = stop_all[year(stop_all)==2019]
 persist_2019 <- persistenceForecast(start, stop, n_days, run_space, obs)
 rmse_persist_2019 <- createRmseDF(n_days, persist_2019)
 
-rmse_persist_total <- rmse_persist_2014%>%
+rmse_persist_total <- rmse_persist_2013%>%
   mutate(Year = 2013)%>%
   full_join(rmse_persist_2014 %>% mutate (Year = 2014))%>%
   full_join(rmse_persist_2015 %>% mutate (Year = 2015))%>%
@@ -379,11 +383,11 @@ rmse_persist_total%>%
 ```
 
 ```{r}
-temp <- read.csv("../DO_modeling_results/rmse_temp_29Mar20.csv")
-o2 <- read.csv("../DO_modeling_results/rmse_o2_29Mar20.csv")
-full <- read.csv("../DO_modeling_results/rmse_full_31Mar20.csv")
-sss <- read.csv("../DO_modeling_results/rmse_sss_29Mar20.csv")
-persist <- read.csv("../DO_modeling_results/rmse_persist_31Mar20.csv")
+temp <- read.csv("../DO_modeling_results/rmse_temp_15Apr20.csv")
+o2 <- read.csv("../DO_modeling_results/rmse_o2_15Apr20.csv")
+full <- read.csv("../DO_modeling_results/rmse_full_15Apr20.csv")
+sss <- read.csv("../DO_modeling_results/rmse_sss_15Apr20.csv")
+persist <- read.csv("../DO_modeling_results/rmse_persist_15Apr20.csv")
 
 rmse_all <- persist%>%
   mutate(Model = "persistance")%>%
@@ -407,37 +411,43 @@ dev.off()
 Uncertainty calcs
 ```{r}
 #Just to get column names
-all <- read.csv(paste("../DO_modeling_results/06Apr20/forecast_2013_full_model_all_uncert.csv",sep = ""))
+all <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_2013_full_model_all_uncert.csv",sep = ""))
 SDs = all[FALSE,seq(31,44)] #This says SD but it is actually var throughout
 
 #Run through all saved forecasts
 for(year in seq(2013,2019)){
-  full <- read.csv(paste("../DO_modeling_results/06Apr20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
+  full <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
     mutate(uncert = "all",
            year = year)
-  full_sd <- sd_sum(full,"all",year)
-  param <- read.csv(paste("../DO_modeling_results/06Apr20/forecast_",year,"_full_model_param_uncert.csv",sep = ""))%>%
+  full_var <- sd_sum(full,"all",year)
+  param <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_param_uncert.csv",sep = ""))%>%
     mutate(uncert = "param",
            year = year)
-  param_sd <- sd_sum(param,"param",year)
-  driver <- read.csv(paste("../DO_modeling_results/06Apr20/forecast_",year,"_full_model_driver_uncert.csv",sep = ""))%>%
+  param_var <- sd_sum(param,"param",year)
+  driver <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_driver_uncert.csv",sep = ""))%>%
     mutate(uncert = "driver",
            year = year)
-  driver_sd <- sd_sum(driver,"driver",year)
-  init <- read.csv(paste("../DO_modeling_results/06Apr20/forecast_",year,"_full_model_init_uncert.csv",sep = ""))%>%
+  driver_var <- sd_sum(driver,"driver",year)
+  init <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_init_uncert.csv",sep = ""))%>%
     mutate(uncert = "init",
            year = year)
-  init_sd <- sd_sum(init,"init",year)
+  init_var <- sd_sum(init,"init",year)
+  proc <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_proc_uncert.csv",sep = ""))%>%
+    mutate(uncert = "proc",
+           year = year)
+  proc_var <- sd_sum(proc,"proc",year)
   SDs = SDs%>%
-    full_join(full_sd)%>%
-    full_join(param_sd)%>%
-    full_join(driver_sd)%>%
-    full_join(init_sd)
+    full_join(full_var)%>%
+    full_join(param_var)%>%
+    full_join(driver_var)%>%
+    full_join(init_var)%>%
+    full_join(proc_var)
   all = all%>%
     full_join(full)%>%
     full_join(param)%>%
     full_join(driver)%>%
-    full_join(init)
+    full_join(init)%>%
+    full_join(proc)
 }
 
 all_sd = all[,c(2,seq(31,46))]%>%
@@ -448,7 +458,24 @@ all_sd_std = all_sd%>%
   group_by(TODAY)%>%
   mutate(TOTAL_7 = sum(PLUS7_var),
          TOTAL_14 = sum(PLUS14_var))
+```
 
+```{r}
+toCalcProcUncert <- all %>%
+  filter(year(as.Date(TODAY))<=2017,
+         uncert == "all")
+n <- seq(1,n_days)
+output_df <- data.frame(n)
+results <- toCalcProcUncert
+results <- as.data.frame(results)
+for(i in seq(1:n_days)){
+  predicted <- results[i+2]
+  observed <- results[i+2+n_days]
+  output_df$mean[output_df$n == i] <- mean(observed[!is.na(observed)] - predicted[!is.na(observed)])
+  output_df$sd[output_df$n == i] <- sd(observed[!is.na(observed)] - predicted[!is.na(observed)])
+}
+output_df
+lm(output_df$mean~output_df$n)
 ```
 
 
@@ -460,6 +487,7 @@ Uncertainty plots
   - 42*3 = 126
 ```{r}
 
+png("../DO_modeling_figures/15Apr20/uncert_fract7.png",width = 6, height = 4, units = "in", res = 300)
 all_sd_std %>%
   filter(uncert != "all")%>%
   ggplot(aes(x = as.Date(TODAY),y= PLUS7_var/TOTAL_7, fill = uncert))+
@@ -469,7 +497,9 @@ all_sd_std %>%
   xlab("")+
   ylab("Variance (fraction of total)")+
   ggtitle("7 day horizon")
+dev.off()
 
+png("../DO_modeling_figures/15Apr20/uncert_fract14.png",width = 6, height = 4, units = "in", res = 300)
 all_sd_std %>%
   filter(uncert != "all")%>%
   ggplot(aes(x = as.Date(TODAY),y= PLUS14_var/TOTAL_14, fill = uncert))+
@@ -479,47 +509,54 @@ all_sd_std %>%
   xlab("")+
   ylab("Variance (fraction of total)")+
   ggtitle("14 day horizon")
+dev.off()
 
+png("../DO_modeling_figures/15Apr20/uncert_season7.png",width = 6, height = 4, units = "in", res = 300)
 all_sd %>%
   filter(uncert != "all")%>%
   ggplot(aes(x = as.Date(TODAY),y= PLUS7_var, fill = uncert))+
   geom_bar(stat = "identity", width = 1)+
   facet_wrap("year", scales = "free_x")+
-  scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param"), 
-                      labels = c("driver","initial cond","parameter"))+
+  scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param","proc"), 
+                      labels = c("driver","initial cond","parameter","process"))+
   xlab("")+
   ylab("Variance (7 day horizon)")+
   geom_line(aes(x = as.Date(TODAY), y = PLUS7_var, lty=uncert), data = all_sd %>% filter(uncert == "all"))+
   scale_linetype_discrete(name = "",labels = c("all"))
+dev.off()
 
+png("../DO_modeling_figures/15Apr20/uncert_season14.png",width = 6, height = 4, units = "in", res = 300)
 all_sd %>%
   filter(uncert != "all", year!=2017)%>%
   ggplot(aes(x = as.Date(TODAY),y= PLUS14_var, fill = uncert))+
   geom_bar(stat = "identity", width = 1)+
   facet_wrap("year", scales = "free_x")+
-  scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param"), 
-                      labels = c("driver","initial cond","parameter"))+
+  scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param","proc"), 
+                      labels = c("driver","initial cond","parameter","process"))+
   xlab("")+
   ylab("Variance (14 day horizon)")+
   geom_line(aes(x = as.Date(TODAY), y = PLUS14_var, lty=uncert), data = all_sd %>% filter(uncert == "all", year !=2017))+
   scale_linetype_discrete(name = "",labels = c("all"))
+dev.off()
 
 SDs_final = SDs%>%
   gather(day,var,1:14)%>%
   mutate(day_n = as.numeric(gsub("_var",gsub("PLUS",day,replacement = ""),replacement = "")))%>%
   select(-day)
 
+png("../DO_modeling_figures/15Apr20/uncert_horiz.png",width = 6, height = 4, units = "in", res = 300)
 SDs_final%>%
   filter(uncert != "all")%>%
   ggplot(aes(x = day_n,y=var, fill = uncert))+
   geom_bar(stat = "identity")+
   facet_wrap("year")+
-  scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param"), 
-                      labels = c("driver","initial cond","parameter"))+
+  scale_fill_discrete(name = "Uncertainty", limits = c("driver","init","param","proc"), 
+                      labels = c("driver","initial cond","parameter","process"))+
   xlab("Forecast Horizon (days)")+
   ylab("Variance")+
   geom_line(aes(x = day_n, y = var, lty=uncert), data = SDs_final %>% filter(uncert == "all"))+
   scale_linetype_discrete(name = "",labels = c("all"))
+dev.off()
 ```
 
 
@@ -545,25 +582,6 @@ while(today < stop){
   today <- today+2
 }
 #```
-
-Saving the best dates for the start and end of each season
-```{r}
-start = as.Date("2013-04-30")
-stop = as.Date("2013-08-08")
-start = as.Date("2014-06-02")
-stop = as.Date("2014-10-15")
-start = as.Date("2015-06-08")
-stop = as.Date("2015-09-28")
-start = as.Date("2016-06-01")
-stop = as.Date("2016-10-07")
-start = as.Date("2017-06-28")
-stop = as.Date("2017-07-12")
-start = as.Date("2018-06-04")
-stop = as.Date("2018-10-22")
-start = as.Date("2019-06-03")
-stop = as.Date("2019-10-30")
-```
-
 
 Just for troubleshooting:
 ```{r}
