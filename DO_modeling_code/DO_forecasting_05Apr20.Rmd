@@ -29,15 +29,11 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
 
 To do:
-- Present parameters in shiny app
-- Linear regression of temperatures for each training year, use average
+- Formalize parameter selection procedure
 - Check observation error
 - Research oxygen max
 - Think about forecast story
-- Run forecasts in Bayes model (training data) to get parameter values
-- Look into best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
-- What am I doing with training vs test data? Is there a way to automatically get the best parameters? 
-  - Read about what other people are doing
+- Talk to Quinn about best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 - Look at alternative null models. I really think the most informative in my mind would be someone pointing at the graph and saying where they think it will go. Is this a thing?
 
 Done:
@@ -64,6 +60,9 @@ Done:
 - Standardize graphs by the amount of error DONE
 - Make uncertainty calculations only based on forecasts (not model) DONE
 - Add process error DONE
+- Present parameters in shiny app DONE
+- Linear regression of temperatures for each training year, use average DONE
+- Run forecasts in Bayes model (training data) to get parameter values DONE
 
 
 
@@ -145,7 +144,7 @@ temp_slope = 0.03937878
 start = start_all[year(start_all)==2013]
 stop = stop_all[year(stop_all)==2013]
 inputs_2013 <- inputs_year(start,stop,CTD,SSS)
-test_2013 <- run_do_hindcast(inputs_2013,obs,stop)
+test_2013 <- run_do_hindcast(inputs_2013,obs,stop-40)
 plot_o2(test_2013,stop,start,stop)
 plot(inputs_2013$Date,inputs_2013$Temp)
 lm1 <- lm(inputs_2013$Temp~inputs_2013$Date)
@@ -389,11 +388,11 @@ rmse_persist_total%>%
 ```
 
 ```{r}
-temp <- read.csv("../DO_modeling_results/rmse_temp_15Apr20.csv")
-o2 <- read.csv("../DO_modeling_results/rmse_o2_15Apr20.csv")
-full <- read.csv("../DO_modeling_results/rmse_full_15Apr20.csv")
-sss <- read.csv("../DO_modeling_results/rmse_sss_15Apr20.csv")
-persist <- read.csv("../DO_modeling_results/rmse_persist_15Apr20.csv")
+temp <- read.csv("../DO_modeling_results/rmse_temp_21Apr20.csv")
+o2 <- read.csv("../DO_modeling_results/rmse_o2_21Apr20.csv")
+full <- read.csv("../DO_modeling_results/rmse_full_21Apr20.csv")
+sss <- read.csv("../DO_modeling_results/rmse_sss_21Apr20.csv")
+persist <- read.csv("../DO_modeling_results/rmse_persist_21Apr20.csv")
 
 rmse_all <- persist%>%
   mutate(Model = "persistance")%>%
