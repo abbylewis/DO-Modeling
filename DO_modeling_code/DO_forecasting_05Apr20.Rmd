@@ -63,6 +63,7 @@ Done:
 - Present parameters in shiny app DONE
 - Linear regression of temperatures for each training year, use average DONE
 - Run forecasts in Bayes model (training data) to get parameter values DONE
+- Added CRPS
 
 
 
@@ -402,14 +403,18 @@ rmse_all <- persist%>%
   full_join(sss %>% mutate(Model = "sss"))
 
 date <- format(Sys.Date(),"%d%b%y")
-jpeg(paste("../DO_modeling_figures/",date,"/RMSE_all.jpeg",sep = ""),width = 5, height = 2, unit = "in", res = 300)
+jpeg(paste("../DO_modeling_figures/",date,"/RMSE_all.jpeg",sep = ""),width = 5, height = 3, unit = "in", res = 300)
+cbbPalette <- c("#0072B2", "#009E73","#000000",  "#D55E00", "#CC79A7")
 rmse_all %>%
   filter(Year!=2017)%>%
-  ggplot(aes(x = n, y = val, color = Model))+
+  ggplot(aes(x = n, y = val, color = Model, lty = Model))+
   geom_line()+
-  ylab("RMSE")+
+  ylab("RMSE (mg/L)")+
+  scale_color_manual(limits = c("o2","temp","full","sss","persistance"), labels = c("oxygen only","temperature only","both","neither","persistence"), values=cbbPalette)+
+  scale_linetype_manual(limits = c("o2","temp","full","sss","persistance"), labels = c("oxygen only","temperature only","both","neither","persistence"), values = c(3,4,5,2,1))+
   xlab("Days past forecast generation")+
-  facet_wrap("Year")
+  facet_wrap("Year")+
+  theme_light()
 dev.off()
 ```
 
@@ -463,6 +468,15 @@ all_sd_std = all_sd%>%
   group_by(TODAY)%>%
   mutate(TOTAL_7 = sum(PLUS7_var),
          TOTAL_14 = sum(PLUS14_var))
+
+#Adding crps
+for(i in 1:n_days){
+  for(j in 1:nrow(all)){
+    if(!is.na(all[j,paste("PLUS",i,"_obs",sep = "")])){
+        all[j,paste("PLUS",i,"_crps",sep = "")]<-crps(all[j,paste("PLUS",i,"_obs",sep = "")],c(all[j,paste("PLUS",i,"_pred",sep = "")],sqrt(all[j,paste("PLUS",i,"_var",sep = "")])))[1]
+    }
+  }
+}
 ```
 
 ```{r}
