@@ -1,0 +1,247 @@
+---
+title: "Shiny"
+author: "Abby Lewis"
+date: "4/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load packages
+library(shiny)
+library(shinythemes)
+library(tidyverse)
+library(readr)
+library(lubridate)
+```
+
+
+A shiny app to get expert predictions as a null model
+
+TO DO
+- Deal with the connection between lines
+- Paired test comparing people to the model at each point
+- Add grey dotted lines for oxygenation changes
+- Set up a widget to show people's RMSE
+- Don't show the whole season (but do show the past)
+- Why the flash of data when you switch years
+- Mixed manager-model option (archive full model and display)
+- Have people input full name to start
+
+
+DONE
+- Set up a plot to take predictions. Only include observation (no model) 
+- Get shiny to record point clicks
+- Add a button to reset
+- Plot oxygenation in a figure below
+- People need to click on today to make their prediction (within some interval). If not exact, adjust to exact
+- Add a button to submit forecast (bonus if this is a popup)
+- When people submit forecasts, the future observations show up
+- Automatically stop when they reach 14 days
+- Get fancy with what is allowed: don't allow cursor to double back
+- Set up a database to store point clicks/hover
+
+
+
+#```{r}
+x<-as.Date("2019-08-01")
+y<-10
+initials <- "TEST"
+TODAY <- as.Date("2019-08-01")
+time_created <- Sys.time()
+human_model <- data.frame(TODAY,x,y,initials,time_created)
+
+write_csv(human_model,"human_forecasts.csv")
+#```
+
+
+
+```{r, include=FALSE}
+start_stop <- read.csv("start_stop.csv")
+start = as.Date(start_stop$start_all)
+stop = as.Date(start_stop$stop_all)
+year<-2019
+
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+obs = CTD%>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date)) %>%
+  select(Date, Conc)%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(O2_mgL = mean(Conc))
+
+SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+SSS$time <- as.Date(SSS$time)
+
+temp = CTD %>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date)) %>%
+  select(Date, Temp)%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(Temp = mean(Temp))
+
+# Define UI
+ui <- fluidPage(theme = shinytheme("lumen"),
+  titlePanel(h1("DO forecast",align = "center")),
+  sidebarPanel(
+    selectInput(inputId = "year", label = strong("Forecast Year"),
+                choices = c("2019","2018","2017","2016","2015","2014","2013"),
+                selected = "2019"),
+    
+    sliderInput("date", strong("Forecast date"), value = min(start[year(start)==year]),
+              min = min(start[year(start)==year]), max = max(stop[year(stop)==year]), step = 1),
+    actionButton("reset", "reset"),
+    hr(),
+    h3("Your last score was:"),
+    h1(textOutput("score"))
+  ),
+
+    # Output: 
+  mainPanel(
+    plotOutput("plot", hover=hoverOpts(id = "hover", delayType = "throttle", clip = TRUE, nullOutside = TRUE),
+               click="click"),
+    plotOutput("driver"), br(), br(), br(), br()
+  )
+)
+
+#Define server function
+server <- function(input, output, session) {
+  
+  vals = reactiveValues(x=NULL, y=NULL)
+  draw = reactiveVal(FALSE)
+  plot_future_obs = reactiveVal(FALSE)
+  obs_now = reactiveValues(datetime = obs$datetime, O2_mgL = obs$O2_mgL)
+  
+  
+  submitModal <- function() {
+    modalDialog(
+      span('Great forecast! Is that your final answer?'),
+      
+      footer = tagList(
+        actionButton("reset2", "reset"),
+        actionButton("submit", "submit")
+      )
+    )
+  }
+  
+  observeEvent(input$click, handlerExpr = {
+    if(draw()) {
+      draw(F)
+      vals$x <- c(vals$x, NA)
+      vals$y <- c(vals$y, NA)
+    }
+    if(!draw()){
+      if(input$click$x > max(obs_now$datetime)-1 & input$click$x < max(obs_now$datetime)+1){
+        draw(T)
+        vals$x <- c(vals$x, max(obs_now$datetime))
+        vals$y <- c(vals$y, obs_now$O2_mgL[which.max(obs_now$datetime)])
+      }
+    }
+  })
+  
+  observeEvent(input$hover, {
+    if (draw()) {
+      if(input$hover$x <= input$date+14 & input$hover$x >= max(obs_now$datetime) & input$hover$x <= max(stop[year(stop)==input$year])){
+        if(input$hover$x>vals$x[length(vals$x)]){
+          vals$x <- c(vals$x, input$hover$x)
+          vals$y <- c(vals$y, input$hover$y)
+        }
+      }
+      if(input$hover$x >= input$date+14 | input$hover$x >= max(stop[year(stop)==input$year])){
+        vals$x <- c(vals$x, input$date+14)
+        vals$y <- c(vals$y, input$hover$y)
+        draw(F)
+        showModal(submitModal())
+      }
+  }})
+  
+  observeEvent(input$reset, handlerExpr = {
+    vals$x <- NULL; vals$y <- NULL
+    plot_future_obs(F)
+  })
+  
+  observeEvent(input$reset2, handlerExpr = {
+    vals$x <- NULL; vals$y <- NULL
+    removeModal()
+  })
+  
+  observeEvent(input$submit, handlerExpr = {
+    results <- read_csv("human_forecasts.csv")
+    x_raw <- as.Date(vals$x[!is.na(vals$x)])
+    y_raw <- vals$y[!is.na(vals$x)]
+    x <- as.Date(seq(input$date,input$date+14,by = 1))
+    y <- approx(x_raw,y_raw,x)$y
+    time_created <- Sys.time()
+    initials <- "TEST"
+    TODAY <- as.Date(input$date)
+    to_submit <- data.frame(TODAY,x,y,initials,time_created)
+    results = results %>%
+      full_join(to_submit)
+    write_csv(results,"human_forecasts.csv")
+    
+    removeModal()
+    plot_future_obs(T)
+  })
+  
+  output$plot= renderPlot({
+    plot(start[1],-10, ylab="Oxygen concentration (mg/L)", xlab="", type="p", xlim = c(min(start[year(start)==input$year]), max(stop[year(stop)==input$year])), ylim = c(0,20))
+    rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -5, ytop = 25, col = "lightgrey", alpha = .5, border = NA)
+    points(x=obs_now$datetime, y=obs_now$O2_mgL, pch = 19, cex = 1)
+    points(x=max(obs_now$datetime), y=obs_now$O2_mgL[which.max(obs_now$datetime)],pch = 19, col = "red", cex = 2)
+    abline(v=input$date, lwd = 3)
+    lines(x=vals$x, y=vals$y, lwd=2)
+    mtext(text = "TODAY",at = c(input$date,18))
+    if(plot_future_obs()){
+      obs_future <- obs%>%
+        filter(datetime >= input$date,
+               datetime <= input$date+14)
+      points(x=obs_future$datetime, y=obs_future$O2_mgL, pch = 19, cex = 1, col = "blue")
+    }
+  })
+  
+  output$driver = renderPlot({
+    par(mfrow = c(2,1), mar = c(0.3, 4.1, 3.7, 2.1), oma = c(0,0,0,0))
+    sss_now = SSS%>%
+      filter(time <= input$date + 14,
+             time >= start[year(start)==input$year])
+    plot(start[1],-10, xlim = c(min(start[year(start)==input$year]), max(stop[year(stop)==input$year])), ylim = c(0,0.7), xlab = "",xaxt = "n", ylab = "Oxygenation (scfm)")
+    rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -1, ytop = 1, col = "lightgrey", alpha = .5, border = NA)
+    lines(x = sss_now$time, y = sss_now$scfm, lwd = 2, col = "blue")
+    abline(v=input$date, lwd = 3)
+    mtext("Drivers", line = 1.5, cex = 2)
+    
+    par(mar = c(4, 4.1, 0, 2.1))
+    temp_now = temp%>%
+      filter(datetime <= input$date,
+             datetime >= start[year(start)==input$year])
+    plot(start[1],-10, xlim = c(min(start[year(start)==input$year]), max(stop[year(stop)==input$year])), ylim = c(0,20), ylab = "Temp. (ºC)", xlab = "")
+    lines(x = temp_now$datetime, y = temp_now$Temp, lwd = 2, col = "red")
+    rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -5, ytop = 25, col = "lightgrey", alpha = .5, border = NA)
+    abline(v=input$date, lwd = 3)
+  })
+  
+  
+  observe({
+    updateSliderInput(session, "date", value = min(start[year(start)==input$year]), min = min(start[year(start)==input$year]), 
+                      max = max(stop[year(stop)==input$year]))
+  })
+  
+  observeEvent(input$date,{
+    plot_future_obs(F)
+    vals$x <- NULL
+    vals$y <- NULL
+    new_obs <- obs%>%
+      filter(datetime <= input$date,
+             datetime >= start[year(start)==input$year])
+    obs_now$datetime = new_obs$datetime; obs_now$O2_mgL = new_obs$O2_mgL
+    })
+}
+
+# Create Shiny object
+shinyApp(ui = ui, server = server)
+```
+
