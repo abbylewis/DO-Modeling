@@ -135,12 +135,12 @@ avg_o2<-unlist(avgs[2])
 avg_hypoVolume<-unlist(avgs[3])
 CTD$hypoVolume<-avg_hypoVolume
 
+temp_slope = 0.03937878
 ```
 
 
 Testing: keep only training years!
 ```{r}
-temp_slope = 0.03937878
 #2013
 start = start_all[year(start_all)==2013]
 stop = stop_all[year(stop_all)==2013]
@@ -200,18 +200,19 @@ temp_slope <- mean(c(lm1$coefficients[2],lm2$coefficients[2],lm3$coefficients[2]
 Run forecasts!
 ```{r}
 #for(uncert in c("param","all","init","proc","driver")){ 
-for(model_name in c("full","temp","o2","SSS")){ 
+#for(model_name in c("full","temp","o2","SSS")){ 
   run_space <- 1 #Number of days between runs of the model
   n_days <- 14 #Forecast horizon
-  #model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
-  gif = T
+  model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
+  gif = F
   uncert = "all" #Options = "all","init","driver","param","proc"
   date <- format(Sys.Date(),"%d%b%y")
+  archiveForecasts = T
   
   #2013
   start = start_all[year(start_all)==2013]
   stop = stop_all[year(stop_all)==2013]
-  results_2013 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
+  results_2013 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts)
   dir.create(paste("../DO_modeling_results/",date,sep = ""))
   write.csv(results_2013,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2013_filt <- createRmseDF_filt(n_days, results_2013, obs) # Calculate rmse for days where there was an observation
@@ -222,7 +223,7 @@ for(model_name in c("full","temp","o2","SSS")){
   #2014
   start = start_all[year(start_all)==2014]
   stop = stop_all[year(stop_all)==2014]
-  results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
+  results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert,archiveForecasts = archiveForecasts)
   write.csv(results_2014,paste("../DO_modeling_results/",date,"/forecast_2014_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2014_filt <- createRmseDF_filt(n_days, results_2014, obs) # Calculate rmse for days where there was an observation
   rmse_2014 <- createRmseDF(n_days, results_2014) # Calculate rmse for all days
@@ -232,7 +233,7 @@ for(model_name in c("full","temp","o2","SSS")){
   #2015
   start = start_all[year(start_all)==2015]
   stop = stop_all[year(stop_all)==2015]
-  results_2015 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
+  results_2015 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert,archiveForecasts = archiveForecasts)
   write.csv(results_2015,paste("../DO_modeling_results/",date,"/forecast_2015_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2015_filt <- createRmseDF_filt(n_days, results_2015, obs)
   rmse_2015 <- createRmseDF(n_days, results_2015)
@@ -242,7 +243,7 @@ for(model_name in c("full","temp","o2","SSS")){
   #2016
   start = start_all[year(start_all)==2016]
   stop = stop_all[year(stop_all)==2016]
-  results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
+  results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert,archiveForecasts = archiveForecasts)
   write.csv(results_2016,paste("../DO_modeling_results/",date,"/forecast_2016_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2016_filt <- createRmseDF_filt(n_days, results_2016, obs)
   rmse_2016 <- createRmseDF(n_days, results_2016)
@@ -252,7 +253,7 @@ for(model_name in c("full","temp","o2","SSS")){
   #2017
   start = start_all[year(start_all)==2017]
   stop = stop_all[year(stop_all)==2017]
-  results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
+  results_2017 <- runForecasts(start, stop, n_days, run_space, obs, delay = 30, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert,archiveForecasts = archiveForecasts)
   write.csv(results_2017,paste("../DO_modeling_results/",date,"/forecast_2017_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2017_filt <- createRmseDF_filt(n_days, results_2017,obs)
   rmse_2017 <- createRmseDF(n_days, results_2017)
@@ -260,7 +261,7 @@ for(model_name in c("full","temp","o2","SSS")){
   #2018
   start = start_all[year(start_all)==2018]
   stop = stop_all[year(stop_all)==2018]
-  results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
+  results_2018 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert,archiveForecasts = archiveForecasts)
   write.csv(results_2018,paste("../DO_modeling_results/",date,"/forecast_2018_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2018_filt <- createRmseDF_filt(n_days, results_2018,obs)
   rmse_2018 <- createRmseDF(n_days, results_2018)
@@ -270,7 +271,7 @@ for(model_name in c("full","temp","o2","SSS")){
   #2019
   start = start_all[year(start_all)==2019]
   stop = stop_all[year(stop_all)==2019]
-  results_2019 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert)
+  results_2019 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert,archiveForecasts = archiveForecasts)
   write.csv(results_2019,paste("../DO_modeling_results/",date,"/forecast_2019_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2019_filt <- createRmseDF_filt(n_days, results_2019,obs)
   rmse_2019 <- createRmseDF(n_days, results_2019)
@@ -301,7 +302,7 @@ for(model_name in c("full","temp","o2","SSS")){
   date <- format(Sys.Date(),"%d%b%y")
   write.csv(rmse_total,paste("../DO_modeling_results/rmse_filt_",model_name,"_",date,".csv", sep = ""))
 
-}
+#}
 
 rmse_total%>%
   filter(Year!=2017)%>%
@@ -416,6 +417,10 @@ rmse_all %>%
   facet_wrap("Year")+
   theme_light()
 dev.off()
+
+rmse_all%>%
+  filter(n==14,
+         Year%in%c(2018,2019))
 ```
 
 Uncertainty calcs

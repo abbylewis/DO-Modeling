@@ -19,12 +19,13 @@ library(Metrics)
 
 
 A shiny app to get expert predictions as a null model
+Created by ASL 
+April 2020
 
 TO DO
 - Deal with the connection between lines/put back people's previous guesses
 - Paired test comparing people to the model at each point
 - Add grey dotted lines for oxygenation changes
-- Don't show the whole season (but do show the past)
 - Why the flash of data when you switch years
 - Mixed manager-model option (archive full model and display)
 - Have people input full name to start
@@ -43,6 +44,7 @@ DONE
 - Get fancy with what is allowed: don't allow cursor to double back
 - Set up a database to store point clicks/hover
 - Set up a widget to show people's RMSE
+- Don't show the whole season (but do show the past)
 
 
 
@@ -97,7 +99,7 @@ ui <- fluidPage(theme = shinytheme("lumen"),
     
     sliderInput("date", strong("Forecast date"), value = min(start[year(start)==year])+14,
               min = min(start[year(start)==year])+14, max = max(stop[year(stop)==year]), step = 1),
-    checkboxInput("model"),
+    checkboxInput("model","model"),
     actionButton("reset", "reset"),uiOutput("next_forecast"),
     uiOutput("score_block")
   ),
@@ -218,19 +220,19 @@ server <- function(input, output, session) {
   })
   
   output$plot= renderPlot({
-    plot(x=obs_now$datetime, y=obs_now$O2_mgL, pch = 19, cex = 1, ylab="Oxygen concentration (mg/L)", xlab="", type="p", xlim = c(min(start[year(start)==input$year]), min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,20))
-    rect(xleft = max(obs_now$datetime), xright = min(input$date+14, max(stop[year(stop)==input$year])), ybot = -5, ytop = 25, col = "lightgrey", alpha = .5, border = NA)
-#    if(input$model){
-#      date = format(as.Date(input$date, origin = "1970-01-01"),"%d%b%y")
-#      archived <- read.csv(paste("../Archived_forecasts/23Mar20/",input$year,"/",date,".csv",sep = ""))
-#      mean_o2_est = apply(archived[-1,], 1, FUN = mean) #make sure this is really omitting the first column
-#      archived$dates <- seq(min(start[year(start)==input$year]), min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year])))
-#      lines(mean_o2_est ~ archived$dates, col = 'black', lwd =2 )
-#      for(i in 2:101){
-#        lines(archived[,i] ~ archived$dates, 
-#              col = 'grey')
-#      }
-#    }
+    plot(x=obs_now$datetime, y=obs_now$O2_mgL, pch = 19, cex = 1, ylab="Oxygen concentration (mg/L)", xlab="", type="p", xlim = c(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,20))
+    rect(xleft = max(obs_now$datetime), xright = min(input$date+14, max(stop[year(stop)==input$year])), ybot = -5, ytop = 25, col = "lightgray", alpha = .5, border = NA)
+    if(input$model){
+      date = format(as.Date(input$date, origin = "1970-01-01"),"%d%b%y")
+      archived <- read.csv(paste("../Archived_forecasts/29Apr20/",input$year,"/",date,".csv",sep = ""))
+      mean_o2_est = apply(archived[,-1], 1, FUN = mean) 
+      archived$dates <- seq(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+14,max(stop[year(stop)==input$year])),by = 1)
+      for(i in 2:101){
+        lines(archived[,i] ~ archived$dates, 
+              col = 'slateblue1')
+      }
+      lines(mean_o2_est ~ archived$dates, col = 'black', lwd =2)
+    }
     points(x=obs_now$datetime, y=obs_now$O2_mgL, pch = 19, cex = 1)
     points(x=max(obs_now$datetime), y=obs_now$O2_mgL[which.max(obs_now$datetime)],pch = 19, col = "red", cex = 2)
     abline(v=input$date, lwd = 3)
@@ -249,8 +251,8 @@ server <- function(input, output, session) {
     sss_now = SSS%>%
       filter(time <= input$date + 14,
              time >= start[year(start)==input$year])
-    plot(start[1],-10, xlim = c(min(start[year(start)==input$year]), min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,0.7), xlab = "",xaxt = "n", ylab = "Oxygenation (scfm)")
-    rect(xleft = max(obs_now$datetime), xright = min(input$date+14, max(stop[year(stop)==input$year])), ybot = -1, ytop = 1, col = "lightgrey", alpha = .5, border = NA)
+    plot(start[1],-10, xlim = c(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,0.7), xlab = "",xaxt = "n", ylab = "Oxygenation (scfm)")
+    rect(xleft = max(obs_now$datetime), xright = min(input$date+14, max(stop[year(stop)==input$year])), ybot = -1, ytop = 1, col = "lightgray", alpha = .5, border = NA)
     lines(x = sss_now$time, y = sss_now$scfm, lwd = 2, col = "blue")
     abline(v=input$date, lwd = 3)
     mtext("Drivers", line = 1.5, cex = 2)
@@ -259,9 +261,9 @@ server <- function(input, output, session) {
     temp_now = temp%>%
       filter(datetime <= input$date,
              datetime >= start[year(start)==input$year])
-    plot(start[1],-10, xlim = c(min(start[year(start)==input$year]), min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,20), ylab = "Temp. (ºC)", xlab = "")
+    plot(start[1],-10, xlim = c(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,20), ylab = "Temp. (ºC)", xlab = "")
     lines(x = temp_now$datetime, y = temp_now$Temp, lwd = 2, col = "red")
-    rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -5, ytop = 25, col = "lightgrey", alpha = .5, border = NA)
+    rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -5, ytop = 25, col = "lightgray", alpha = .5, border = NA)
     abline(v=input$date, lwd = 3)
   })
   
@@ -270,7 +272,8 @@ server <- function(input, output, session) {
     } else {NULL})
   
   observeEvent(input$next_forecast, handlerExpr = {
-    input$date<-input$date+14
+    updateSliderInput(session, "date", value = input$date+14, min = min(start[year(start)==input$year])+15, 
+                      max = max(stop[year(stop)==input$year]))
   })
 }
 

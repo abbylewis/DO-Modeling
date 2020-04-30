@@ -422,7 +422,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
         dir2.1<-paste(dir1.1,"/",year,model,sep = "")
         dir.create(dir1.1)
         dir.create(dir2.1)
-        write.csv(est_thisYear$Y[1,,],paste(dir2,"/",format(today,"%d%b%y"),".csv",sep = ""))
+        write.csv(est_thisYear$Y[1,,], paste(dir2.1,"/",format(today,"%d%b%y"),".csv",sep = ""))
       }
       today <- today+run_space
     }else{ #If there was an error
