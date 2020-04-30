@@ -13,20 +13,22 @@ library(shinythemes)
 library(tidyverse)
 library(readr)
 library(lubridate)
+library(readxl)
+library(Metrics)
 ```
 
 
 A shiny app to get expert predictions as a null model
 
 TO DO
-- Deal with the connection between lines
+- Deal with the connection between lines/put back people's previous guesses
 - Paired test comparing people to the model at each point
 - Add grey dotted lines for oxygenation changes
-- Set up a widget to show people's RMSE
 - Don't show the whole season (but do show the past)
 - Why the flash of data when you switch years
 - Mixed manager-model option (archive full model and display)
 - Have people input full name to start
+- Set up intervals that it progressively moves through
 
 
 DONE
@@ -40,6 +42,7 @@ DONE
 - Automatically stop when they reach 14 days
 - Get fancy with what is allowed: don't allow cursor to double back
 - Set up a database to store point clicks/hover
+- Set up a widget to show people's RMSE
 
 
 
@@ -89,19 +92,18 @@ ui <- fluidPage(theme = shinytheme("lumen"),
   titlePanel(h1("DO forecast",align = "center")),
   sidebarPanel(
     selectInput(inputId = "year", label = strong("Forecast Year"),
-                choices = c("2019","2018","2017","2016","2015","2014","2013"),
+                choices = c("2019","2018","2016","2015","2014","2013"),
                 selected = "2019"),
     
-    sliderInput("date", strong("Forecast date"), value = min(start[year(start)==year]),
-              min = min(start[year(start)==year]), max = max(stop[year(stop)==year]), step = 1),
-    actionButton("reset", "reset"),
-    hr(),
-    h3("Your last score was:"),
-    h1(textOutput("score"))
+    sliderInput("date", strong("Forecast date"), value = min(start[year(start)==year])+14,
+              min = min(start[year(start)==year])+14, max = max(stop[year(stop)==year]), step = 1),
+    checkboxInput("model"),
+    actionButton("reset", "reset"),uiOutput("next_forecast"),
+    uiOutput("score_block")
   ),
 
     # Output: 
-  mainPanel(
+mainPanel(
     plotOutput("plot", hover=hoverOpts(id = "hover", delayType = "throttle", clip = TRUE, nullOutside = TRUE),
                click="click"),
     plotOutput("driver"), br(), br(), br(), br()
@@ -115,6 +117,23 @@ server <- function(input, output, session) {
   draw = reactiveVal(FALSE)
   plot_future_obs = reactiveVal(FALSE)
   obs_now = reactiveValues(datetime = obs$datetime, O2_mgL = obs$O2_mgL)
+  
+  observe({
+    #updateSelectInput(session = session, inputId = "year", label = strong("Forecast Year"),
+     #                 choices = c("2019","2018","2016","2015","2014","2013"), selected = input$year)
+    updateSliderInput(session, "date", value = min(start[year(start)==input$year])+15, min = min(start[year(start)==input$year])+15, 
+                      max = max(stop[year(stop)==input$year]))
+  })
+  
+  observeEvent(input$date,{
+    plot_future_obs(F)
+    vals$x <- NULL
+    vals$y <- NULL
+    new_obs <- obs%>%
+      filter(datetime <= input$date,
+             datetime >= start[year(start)==input$year])
+    obs_now$datetime = new_obs$datetime; obs_now$O2_mgL = new_obs$O2_mgL
+  })
   
   
   submitModal <- function() {
@@ -135,7 +154,7 @@ server <- function(input, output, session) {
       vals$y <- c(vals$y, NA)
     }
     if(!draw()){
-      if(input$click$x > max(obs_now$datetime)-1 & input$click$x < max(obs_now$datetime)+1){
+      if(input$click$x > max(obs_now$datetime)-2 & input$click$x < max(obs_now$datetime)+2){
         draw(T)
         vals$x <- c(vals$x, max(obs_now$datetime))
         vals$y <- c(vals$y, obs_now$O2_mgL[which.max(obs_now$datetime)])
@@ -171,25 +190,47 @@ server <- function(input, output, session) {
   
   observeEvent(input$submit, handlerExpr = {
     results <- read_csv("human_forecasts.csv")
-    x_raw <- as.Date(vals$x[!is.na(vals$x)])
+    x_raw <- as.Date(vals$x[!is.na(vals$x)], origin = "1970-01-01")
     y_raw <- vals$y[!is.na(vals$x)]
-    x <- as.Date(seq(input$date,input$date+14,by = 1))
+    x <- seq(as.Date(input$date, origin = "1970-01-01"),(as.Date(input$date, origin = "1970-01-01")+14),by = 1)
     y <- approx(x_raw,y_raw,x)$y
     time_created <- Sys.time()
     initials <- "TEST"
-    TODAY <- as.Date(input$date)
+    TODAY <- as.Date(input$date, origin = "1970-01-01")
     to_submit <- data.frame(TODAY,x,y,initials,time_created)
     results = results %>%
       full_join(to_submit)
     write_csv(results,"human_forecasts.csv")
+    
+    obs_future <- obs%>%
+      filter(datetime >= as.Date(input$date, origin = "1970-01-01"),
+             datetime <= as.Date(input$date, origin = "1970-01-01")+14)%>%
+      left_join(to_submit,by = c("datetime" = "x"))
+        
+    output$score_block = renderUI({tagList(
+      hr(),
+      h3("Your guess was off by an average of:"),
+      h1(paste(round(rmse(obs_future$O2_mgL, obs_future$y),2),"mg/L"))
+    )})
     
     removeModal()
     plot_future_obs(T)
   })
   
   output$plot= renderPlot({
-    plot(start[1],-10, ylab="Oxygen concentration (mg/L)", xlab="", type="p", xlim = c(min(start[year(start)==input$year]), max(stop[year(stop)==input$year])), ylim = c(0,20))
-    rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -5, ytop = 25, col = "lightgrey", alpha = .5, border = NA)
+    plot(x=obs_now$datetime, y=obs_now$O2_mgL, pch = 19, cex = 1, ylab="Oxygen concentration (mg/L)", xlab="", type="p", xlim = c(min(start[year(start)==input$year]), min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,20))
+    rect(xleft = max(obs_now$datetime), xright = min(input$date+14, max(stop[year(stop)==input$year])), ybot = -5, ytop = 25, col = "lightgrey", alpha = .5, border = NA)
+#    if(input$model){
+#      date = format(as.Date(input$date, origin = "1970-01-01"),"%d%b%y")
+#      archived <- read.csv(paste("../Archived_forecasts/23Mar20/",input$year,"/",date,".csv",sep = ""))
+#      mean_o2_est = apply(archived[-1,], 1, FUN = mean) #make sure this is really omitting the first column
+#      archived$dates <- seq(min(start[year(start)==input$year]), min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year])))
+#      lines(mean_o2_est ~ archived$dates, col = 'black', lwd =2 )
+#      for(i in 2:101){
+#        lines(archived[,i] ~ archived$dates, 
+#              col = 'grey')
+#      }
+#    }
     points(x=obs_now$datetime, y=obs_now$O2_mgL, pch = 19, cex = 1)
     points(x=max(obs_now$datetime), y=obs_now$O2_mgL[which.max(obs_now$datetime)],pch = 19, col = "red", cex = 2)
     abline(v=input$date, lwd = 3)
@@ -208,8 +249,8 @@ server <- function(input, output, session) {
     sss_now = SSS%>%
       filter(time <= input$date + 14,
              time >= start[year(start)==input$year])
-    plot(start[1],-10, xlim = c(min(start[year(start)==input$year]), max(stop[year(stop)==input$year])), ylim = c(0,0.7), xlab = "",xaxt = "n", ylab = "Oxygenation (scfm)")
-    rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -1, ytop = 1, col = "lightgrey", alpha = .5, border = NA)
+    plot(start[1],-10, xlim = c(min(start[year(start)==input$year]), min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,0.7), xlab = "",xaxt = "n", ylab = "Oxygenation (scfm)")
+    rect(xleft = max(obs_now$datetime), xright = min(input$date+14, max(stop[year(stop)==input$year])), ybot = -1, ytop = 1, col = "lightgrey", alpha = .5, border = NA)
     lines(x = sss_now$time, y = sss_now$scfm, lwd = 2, col = "blue")
     abline(v=input$date, lwd = 3)
     mtext("Drivers", line = 1.5, cex = 2)
@@ -218,27 +259,19 @@ server <- function(input, output, session) {
     temp_now = temp%>%
       filter(datetime <= input$date,
              datetime >= start[year(start)==input$year])
-    plot(start[1],-10, xlim = c(min(start[year(start)==input$year]), max(stop[year(stop)==input$year])), ylim = c(0,20), ylab = "Temp. (ºC)", xlab = "")
+    plot(start[1],-10, xlim = c(min(start[year(start)==input$year]), min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,20), ylab = "Temp. (ºC)", xlab = "")
     lines(x = temp_now$datetime, y = temp_now$Temp, lwd = 2, col = "red")
     rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -5, ytop = 25, col = "lightgrey", alpha = .5, border = NA)
     abline(v=input$date, lwd = 3)
   })
   
+  output$next_forecast <-renderUI(expr = if (plot_future_obs()) {
+    actionButton("next_forecast","next")
+    } else {NULL})
   
-  observe({
-    updateSliderInput(session, "date", value = min(start[year(start)==input$year]), min = min(start[year(start)==input$year]), 
-                      max = max(stop[year(stop)==input$year]))
+  observeEvent(input$next_forecast, handlerExpr = {
+    input$date<-input$date+14
   })
-  
-  observeEvent(input$date,{
-    plot_future_obs(F)
-    vals$x <- NULL
-    vals$y <- NULL
-    new_obs <- obs%>%
-      filter(datetime <= input$date,
-             datetime >= start[year(start)==input$year])
-    obs_now$datetime = new_obs$datetime; obs_now$O2_mgL = new_obs$O2_mgL
-    })
 }
 
 # Create Shiny object
