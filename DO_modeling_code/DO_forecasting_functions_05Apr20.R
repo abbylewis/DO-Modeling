@@ -227,7 +227,7 @@ plot_o2 = function(est_out, today, start, stop, n_days = 14){
   mean_o2_est = apply(est_out$Y[1,,], 1, FUN = mean)
   plot(mean_o2_est ~ est_out$dates, type ='l', 
        ylim = c(-1,25),#max(c(est_out$Y[1,,], est_out$obs[1,,]),na.rm = T)),
-       col = 'grey', ylab = 'O2 (mg L-1)', xlab = '',main = year(est_out$dates[1]), xlim = c(start, stop))
+       col = 'grey', ylab = 'Dissolved oxygen (mg L-1)', xlab = '',main = year(est_out$dates[1]), xlim = c(start, stop))
   for(i in 2:n_en){
     lines(est_out$Y[1,,i] ~ est_out$dates, 
           col = 'grey')

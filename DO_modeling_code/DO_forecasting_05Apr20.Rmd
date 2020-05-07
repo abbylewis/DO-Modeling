@@ -29,12 +29,12 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
 
 To do:
+- You don’t need to rerun everything up to yesterday! Just save and load
 - Formalize parameter selection procedure
 - Check observation error
 - Research oxygen max
 - Think about forecast story
 - Talk to Quinn about best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
-- Look at alternative null models. I really think the most informative in my mind would be someone pointing at the graph and saying where they think it will go. Is this a thing?
 
 Done:
 - Set aside some data as test (2013, 2015, 2019) and some as training (2014, 2016, 2017, 2018): DONE
@@ -204,7 +204,7 @@ Run forecasts!
   run_space <- 1 #Number of days between runs of the model
   n_days <- 14 #Forecast horizon
   model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
-  gif = F
+  gif = T
   uncert = "all" #Options = "all","init","driver","param","proc"
   date <- format(Sys.Date(),"%d%b%y")
   archiveForecasts = T
@@ -390,11 +390,11 @@ rmse_persist_total%>%
 ```
 
 ```{r}
-temp <- read.csv("../DO_modeling_results/rmse_temp_21Apr20.csv")
-o2 <- read.csv("../DO_modeling_results/rmse_o2_21Apr20.csv")
-full <- read.csv("../DO_modeling_results/rmse_full_21Apr20.csv")
-sss <- read.csv("../DO_modeling_results/rmse_sss_21Apr20.csv")
-persist <- read.csv("../DO_modeling_results/rmse_persist_21Apr20.csv")
+temp <- read.csv("../DO_modeling_results/rmse_temp_06May20.csv")
+o2 <- read.csv("../DO_modeling_results/rmse_o2_06May20.csv")
+full <- read.csv("../DO_modeling_results/rmse_full_06May20.csv")
+sss <- read.csv("../DO_modeling_results/rmse_sss_06May20.csv")
+persist <- read.csv("../DO_modeling_results/rmse_persist_06May20.csv")
 
 rmse_all <- persist%>%
   mutate(Model = "persistance")%>%
