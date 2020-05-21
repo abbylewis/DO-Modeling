@@ -1,0 +1,194 @@
+---
+title: "Bayes_DO"
+author: "Abby Lewis"
+date: "2/3/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Copied from Mary's file but set up as .Rmd
+2020-02-03: Can confirm that Mary's file runs
+2020-02-04: Model is running and generally works well! Issues with 2016, 2015, and 2014. 2018 has insane uncertainty
+2020-02-19: Updated with parameter values and model structure from GLM-AED. Used a log-normal distribution so that ko2 and R20 shouldn't be able to go negative. 2016 is pretty good now, but everything else is worse.
+2020-04-15: Updating Bayes work to match EnKF and choose initial parameters. This is not even close to complete
+```{r}
+# State-space model - revised by S. LaDeau (11/2017) from the EcoForecast Activity by Michael Dietze, with reference "Ecological Forecasting", chapter 8
+# ========================================================
+#   
+#   
+
+#I don't think you will actually need all these packages for the truncated script
+#but leaving them in for now
+library(tidyverse)
+library(readxl)
+library(rjags)
+library(runjags)
+library(moments)
+library(geosphere)
+library(lubridate)
+source('./JAGS_function_AED_ASL.R') 
+```
+
+
+- Things to note from model changes. Currently not including inflow, outflow, or entrainment
+- No idea how to choose distributions
+```{r}
+#1) Model options => pick date range, site, time step, and type of model -----------------------------------------------------
+
+model_name = 'Seasonal_DO_model_AED' # options are Seasonal_DO_model_AED and Seasonal_DO_model_Pace
+#Creating my own model in this file
+model=paste0("./",model_name, '.R')
+
+#My local directory - use as a file repository for plot files 
+my_directory <- "."
+```
+
+Updated with my observations and driver data
+```{r}
+#2) read in and visualize data ------------------------------------------------------------------------------------------------------------
+#Edit working directory to be where file is stored on your computer
+
+turnover = as.Date("2013-10-01")
+#turnover = as.Date("2014-10-15")
+#turnover = as.Date("2015-09-28")
+#turnover = as.Date("2016-10-07")
+#turnover = as.Date("2017-07-12")
+#turnover = as.Date("2018-10-22")
+#turnover = as.Date("2019-10-30")
+year <- year(turnover) #I am doing this one year at a time right now
+
+obs = read_csv("DO_observed_daily.csv") %>%
+  mutate(datetime = as.Date(datetime))%>%
+  filter(year(datetime) == year,
+         datetime<=turnover)
+first = min(which(!is.na(obs$O2_mgL)))
+start_date <- obs$datetime[first]
+obs_cut <- obs[first:nrow(obs),]
+y = t(obs_cut[,2])
+
+#for Schmidt (driver variable?)
+#Schmidt <- as.matrix(read_csv("./Buoy_year_by_week_Schmidt_11AUG19.csv"))
+drivers <- read_csv("driver_data.csv")%>%
+  mutate(datetime = as.Date(datetime))%>%
+  filter(year(datetime) == year,
+         datetime<=turnover,
+         datetime>=start_date)
+SSS <- t(drivers$SSS)
+inflow <- t(drivers$inflow)
+outflow <- t(drivers$outflow)
+entrain <- t(drivers$entrain)
+temp <- t(drivers$temp)
+vol <- t(drivers$hypo_volume)
+  
+#setting objects that are referred to in model
+years <- year #only doing one year at a time at this point
+year_no = as.numeric(as.factor(years))
+season_days = seq(1:length(y))
+#site = "Midge"
+
+#for Schmidt
+#week_avg = colMeans(Schmidt, na.rm = TRUE)
+```
+
+```{r}
+#3) JAGS Plug-Ins -----------------------------------------------------------------------------------------------------
+jags_plug_ins <- jags_plug_ins(model_name = model_name)
+# Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+```
+
+```{r}
+#4) Run model (no edits, unless you want to change # of iterations) -------------------------------------------------------------
+j.model   <- jags.model (file = model,
+                         data = jags_plug_ins$data.model,
+                         inits = jags_plug_ins$init.model,
+                         n.chains = 3)
+
+jags.out <- run.jags(model = model,
+                     data = jags_plug_ins$data.model,
+                     adapt =  5000, 
+                     burnin =  10000, #100000
+                     sample = 5000, 
+                     n.chains = 3, 
+                     inits=jags_plug_ins$init.model,
+                     monitor = jags_plug_ins$variable.namesout.model)
+```
+
+```{r}
+#5) Generate and save parameter traceplots and posterior distributions
+write.jagsfile(jags.out, file=file.path("./",paste(year,paste0(model_name,'.txt'), sep = '_')), 
+               remove.tags = TRUE, write.data = TRUE, write.inits = TRUE)
+
+params <- jags_plug_ins$params.model
+
+for (i in 1:length(params)){
+  png(file=file.path("./Traceplots/",paste(paste0(year,model_name,'_Convergence_',params[i],'.png'), sep = '_')))
+  plot(jags.out, vars = params[i]) 
+  dev.off()
+}
+
+
+#need to view this to get parameter estimates for model comparison Excel file
+sum <- summary(jags.out, vars = jags_plug_ins$variable.names.model)
+
+#save average parameter value results
+sink(file = file.path("./",paste(year,paste0(model_name,'_param_summary.txt'), sep = '_')))
+print("Parameter summary")
+sum
+sink()
+```
+
+```{r}
+#6) CI Calculations
+
+#getting rjags output into matrix form
+jags.out.mcmc <- as.mcmc.list(jags.out)
+out <- as.matrix(jags.out.mcmc)
+
+#get dates and observations again
+dat <- obs_cut
+
+times <- dat$datetime
+
+#setting functions to calculate ci
+ciEnvelope <- function(x,ylo,yhi,...){
+  polygon(cbind(c(x, rev(x), x[1]), c(ylo, rev(yhi),
+                                      ylo[1])), border = NA,...) 
+}
+
+#pulling out latent state from model output
+mus=c(grep("mu\\[1,", colnames(out)),grep("mu\\[2,", colnames(out)),
+      grep("mu\\[3,", colnames(out)),grep("mu\\[4,", colnames(out)),
+      grep("mu\\[5,", colnames(out)),grep("mu\\[6,", colnames(out)))
+mu = out[,mus]
+
+
+#calculating ci of latent state
+ci <- apply(mu,2,quantile,c(0.025,0.5,0.975))
+
+
+ys = dat$O2_mgL #add in other years if you ever get to that point
+
+
+```
+
+```{r}
+#7) CI, PI, Obs PI Plots
+
+
+#CI, PI, Obs PI
+png(file=file.path(my_directory,paste("Season_plots/",paste(year, model_name,'CI_PI.png', sep = '_'),sep = "")), res=300, width=20, height=15, units='cm')
+
+#2019
+plot(times,ci[2,],type='n', ylab="Oxygen concentration (mg/L)", ylim = c(min(ci[1,], na.rm = TRUE),max(ci[3,], na.rm = TRUE)),
+     main="",xlab = "")
+ciEnvelope(times,ci[1,],ci[3,],col="lightBlue")
+points(times,ys,pch="+",cex=0.8)
+
+title(main=paste(year,"Obs (+), Latent CI (blue)")) 
+
+
+dev.off()
+```
