@@ -71,10 +71,10 @@ Done:
 ```{r}
 ## Parameters
 parms <- c(
-  R20 = .7, #mg/L/day
-  theta = 1.12, 
-  ko2 = .5, #mg/L
-  sss_scalar = 3
+  R20 = .6, #mg/L/day #0.0093 from Carey (but I don't have DOC)
+  theta = 1.07, #1.07 from Carey
+  ko2 = .2, #mg/L #Could use .2 from Carey L&O paper
+  sss_scalar = 3 #.46 from Carey but no idea what their units are
 )
 
 #BEST YET: R20=.7, theta=1.12, ko2 = .5, sss_scalar = 3: 2016 max = 2.2, 2014 max = 1.02, 2018 max = .76
@@ -145,7 +145,7 @@ Testing: keep only training years!
 start = start_all[year(start_all)==2013]
 stop = stop_all[year(stop_all)==2013]
 inputs_2013 <- inputs_year(start,stop,CTD,SSS)
-test_2013 <- run_do_hindcast(inputs_2013,obs,stop-40)
+test_2013 <- run_do_hindcast(inputs_2013,obs,stop)
 plot_o2(test_2013,stop,start,stop)
 plot(inputs_2013$Date,inputs_2013$Temp)
 lm1 <- lm(inputs_2013$Temp~inputs_2013$Date)
@@ -203,7 +203,7 @@ Run forecasts!
 #for(model_name in c("full","temp","o2","SSS")){ 
   run_space <- 1 #Number of days between runs of the model
   n_days <- 14 #Forecast horizon
-  model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
+  model_name = "temp" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
   gif = T
   uncert = "all" #Options = "all","init","driver","param","proc"
   date <- format(Sys.Date(),"%d%b%y")

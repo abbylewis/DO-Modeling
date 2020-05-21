@@ -10,7 +10,7 @@ year<-2019
 
 # Define UI
 ui <- fluidPage(theme = shinytheme("lumen"),
-                titlePanel(h1("DO forecast",align = "center")),
+                titlePanel(h1("Dissolved Oxygen Forecast",align = "center")),
                 title = "DO forecast",
                 sidebarPanel(
                   selectInput(inputId = "model", label = strong("Model Type"),

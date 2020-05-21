@@ -238,6 +238,7 @@ plot_o2 = function(est_out, today, start, stop, n_days = 14){
   points(obs$O2_mgL~obs$datetime, pch = 16, col = rgb(1,0,0))
   points(future_obs$O2_mgL~future_obs$datetime, pch = 16, col = rgb(0,0,1))
   abline(v = today)
+  legend('topright',c('Model','Observations'),lty=c(1,NA),pch=c(NA,16))
   #arrows(est_out$dates, est_out$obs[1,,] - 
   #        est_out$state_sd, 
   #     est_out$dates, est_out$obs[1,,] +
