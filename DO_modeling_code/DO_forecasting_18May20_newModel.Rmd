@@ -29,6 +29,8 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
 
 To do:
+- Select the best parameters with the new model
+- See if new parameters make a difference
 - You don’t need to rerun everything up to yesterday! Just save and load
 - Formalize parameter selection procedure
 - Check observation error
@@ -71,11 +73,16 @@ Done:
 ```{r}
 ## Parameters
 parms <- c(
-  R10 = .25, #mg/L/day
-  theta = .65,
-  ko2 = .2, #mg/L #Could use .2 from Carey L&O paper
-  sss_scalar = 3 #.46 from Carey but no idea what their units are
+  R10 = 0.355, #mg/L/day
+  theta = 0.7625,
+  ko2 = 0.1975, #mg/L #Could use .2 from Carey L&O paper
+  sss_scalar = 2.775 #2.2 calculated from Carey et al. 2017
 )
+
+#SSS scalar: 3.15, 2.9, 2.6, 2.45 (from 2016 to 2013) == 2.775
+#KO2: .195, .195, .2, .2 == 0.1975
+#theta: .9, .8, .7, .65 == 0.7625
+#R10: .4,.35,.35,.32 == 0.355
 
 #BEST YET: R20=.7, theta=1.12, ko2 = .5, sss_scalar = 3: 2016 max = 2.2, 2014 max = 1.02, 2018 max = .76
 #--> Overfit to 2014, 2016 and 2018!
@@ -191,6 +198,11 @@ plot_o2(test_2017,stop,start,stop)
 #plot_hindcast(test_2017)
 #plot(inputs_2017$Date,inputs_2017$Temp)
 temp_slope <- mean(c(lm1$coefficients[2],lm2$coefficients[2],lm3$coefficients[2],lm4$coefficients[2]))
+
+
+#to calc SSS scalar from Carey et al. 2017 parameters
+#inputs_2013$scfm*50*1000000/22665926
+#(.46+1.1)/(.2+1.1)+1
 ```
 
 
