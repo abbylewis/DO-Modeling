@@ -29,7 +29,7 @@ library(runjags)
 library(moments)
 library(geosphere)
 library(lubridate)
-source('./JAGS_function_AED_ASL.R') 
+source('./JAGS_function_Pace_ASL.R') 
 ```
 
 
@@ -38,7 +38,7 @@ source('./JAGS_function_AED_ASL.R')
 ```{r}
 #1) Model options => pick date range, site, time step, and type of model -----------------------------------------------------
 
-model_name = 'Seasonal_DO_model_AED' # options are Seasonal_DO_model_AED and Seasonal_DO_model_Pace
+model_name = 'Seasonal_DO_model_Pace' # options are Seasonal_DO_model_AED and Seasonal_DO_model_Pace
 #Creating my own model in this file
 model=paste0("./",model_name, '.R')
 
@@ -50,20 +50,14 @@ Updated with my observations and driver data
 ```{r}
 #2) read in and visualize data ------------------------------------------------------------------------------------------------------------
 #Edit working directory to be where file is stored on your computer
-
-turnover = as.Date("2013-10-01")
-#turnover = as.Date("2014-10-15")
-#turnover = as.Date("2015-09-28")
-#turnover = as.Date("2016-10-07")
-#turnover = as.Date("2017-07-12")
-#turnover = as.Date("2018-10-22")
-#turnover = as.Date("2019-10-30")
-year <- year(turnover) #I am doing this one year at a time right now
+start_stop = read_csv("../DO_modeling_data/start_stop.csv")
+year <- 2016
 
 obs = read_csv("DO_observed_daily.csv") %>%
   mutate(datetime = as.Date(datetime))%>%
   filter(year(datetime) == year,
-         datetime<=turnover)
+         datetime<=start_stop$stop_all[year(start_stop$stop_all) == year],
+         datetime>=start_stop$start_all[year(start_stop$start_all) == year])
 first = min(which(!is.na(obs$O2_mgL)))
 start_date <- obs$datetime[first]
 obs_cut <- obs[first:nrow(obs),]
@@ -74,8 +68,8 @@ y = t(obs_cut[,2])
 drivers <- read_csv("driver_data.csv")%>%
   mutate(datetime = as.Date(datetime))%>%
   filter(year(datetime) == year,
-         datetime<=turnover,
-         datetime>=start_date)
+         datetime<=start_stop$stop_all[year(start_stop$stop_all) == year],
+         datetime>=start_stop$start_all[year(start_stop$start_all) == year])
 SSS <- t(drivers$SSS)
 inflow <- t(drivers$inflow)
 outflow <- t(drivers$outflow)
@@ -87,10 +81,6 @@ vol <- t(drivers$hypo_volume)
 years <- year #only doing one year at a time at this point
 year_no = as.numeric(as.factor(years))
 season_days = seq(1:length(y))
-#site = "Midge"
-
-#for Schmidt
-#week_avg = colMeans(Schmidt, na.rm = TRUE)
 ```
 
 ```{r}
