@@ -21,6 +21,7 @@ source('O2_models_24Mar20.R')
 library(magick)
 library(animation)
 library(Metrics)
+#library(verification) this messes with select from tidyverse!
 ```
 
 Created 20 March 20 to convert my model to a forecasting framework
@@ -71,9 +72,9 @@ Done:
 ```{r}
 ## Parameters
 parms <- c(
-  R20 = .6, #mg/L/day #0.0093 from Carey (but I don't have DOC)
-  theta = 1.07, #1.07 from Carey
-  ko2 = .2, #mg/L #Could use .2 from Carey L&O paper
+  R20 = .7, #mg/L/day #0.0093 from Carey (but I don't have DOC)
+  theta = 1.12, #1.08 from Hipsey
+  ko2 = .5, #mg/L #Could use .2 from Carey L&O paper
   sss_scalar = 3 #.46 from Carey but no idea what their units are
 )
 
@@ -111,7 +112,7 @@ CTD = CTD%>%
   mutate(Date = as.Date(Date))
 obs <- CTD %>%
   filter(!is.na(Conc))%>%
-  select(Date, Conc)%>%
+  dplyr::select(Date, Conc)%>%
   rename(datetime = Date)%>%
   group_by(datetime)%>%
   summarize(O2_mgL = mean(Conc))
@@ -145,9 +146,9 @@ Testing: keep only training years!
 start = start_all[year(start_all)==2013]
 stop = stop_all[year(stop_all)==2013]
 inputs_2013 <- inputs_year(start,stop,CTD,SSS)
-test_2013 <- run_do_hindcast(inputs_2013,obs,stop)
+test_2013 <- run_do_hindcast(inputs_2013,obs,stop, n_days = 40)
 plot_o2(test_2013,stop,start,stop)
-plot(inputs_2013$Date,inputs_2013$Temp)
+plot(inputs_2013$Date,inputs_2013$Chla)
 lm1 <- lm(inputs_2013$Temp~inputs_2013$Date)
 #plot_hindcast(test_2013)
 #pairs(inputs_2013)
@@ -473,15 +474,6 @@ all_sd_std = all_sd%>%
   group_by(TODAY)%>%
   mutate(TOTAL_7 = sum(PLUS7_var),
          TOTAL_14 = sum(PLUS14_var))
-
-#Adding crps
-for(i in 1:n_days){
-  for(j in 1:nrow(all)){
-    if(!is.na(all[j,paste("PLUS",i,"_obs",sep = "")])){
-        all[j,paste("PLUS",i,"_crps",sep = "")]<-crps(all[j,paste("PLUS",i,"_obs",sep = "")],c(all[j,paste("PLUS",i,"_pred",sep = "")],sqrt(all[j,paste("PLUS",i,"_var",sep = "")])))[1]
-    }
-  }
-}
 ```
 
 ```{r}
@@ -501,6 +493,7 @@ for(i in seq(1:n_days)){
 output_df
 lm(output_df$mean~output_df$n)
 ```
+
 
 
 Uncertainty plots
@@ -582,6 +575,118 @@ SDs_final%>%
   scale_linetype_discrete(name = "",labels = c("all"))
 dev.off()
 ```
+
+```{r}
+#Bias figure and crps
+
+#Just to get column names
+all_model <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_2013_full_model_all_uncert.csv",sep = ""))
+
+#Run through all saved forecasts
+for(year in seq(2013,2019)){
+  full <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
+    mutate(model = "full",
+           year = year)
+  o2 <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_o2_model_all_uncert.csv",sep = ""))%>%
+    mutate(model = "o2",
+           year = year)
+  sss <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_sss_model_all_uncert.csv",sep = ""))%>%
+    mutate(model = "sss",
+           year = year)
+  temp <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_temp_model_all_uncert.csv",sep = ""))%>%
+    mutate(model = "temp",
+           year = year)
+  all_model = all_model%>%
+    full_join(full)%>%
+    full_join(o2)%>%
+    full_join(temp)%>%
+    full_join(sss)
+}
+
+toCalcBias <- all_model
+years<- seq(2013,2019)
+models = c("full","sss","o2","temp")
+n <- rep(seq(1,n_days),length(years)*length(models))
+year <- rep(years,each = n_days, times = length(models))
+model <- rep(models, each = length(years)*n_days)
+output_df <- data.frame(n, year, model)
+results <- as.data.frame(toCalcBias)
+for(model in models){
+  for(year in seq(2013,2019, by = 1)){
+    for(i in seq(1:n_days)){
+      predicted <- results[results$year == year & results$model == model, i+2]
+      observed <-  results[results$year == year & results$model == model, i+2 + n_days]
+      output_df$mean[output_df$n==i & output_df$year==year & output_df$model==model] <- mean(predicted[!is.na(observed)]-observed[!is.na(observed)])
+      output_df$sd[output_df$n==i & output_df$year==year & output_df$model==model]   <- sd(predicted[!is.na(observed)]-observed[!is.na(observed)])
+    }
+  }
+}
+
+#Adding crps
+for(i in 1:n_days){
+  for(j in 1:nrow(all_model)){
+    if(!is.na(all_model[j,paste("PLUS",i,"_obs",sep = "")])){
+        all_model[j,paste("PLUS",i,"_crps",sep = "")]<-crps(all_model[j,paste("PLUS",i,"_obs",sep = "")],c(all_model[j,paste("PLUS",i,"_pred",sep = "")],sqrt(all_model[j,paste("PLUS",i,"_var",sep = "")])))[1]
+    }
+  }
+}
+```
+
+```{r}
+png("../DO_modeling_figures/15Apr20/bias_horizon.png",width = 6, height = 4, units = "in", res = 300)
+output_df%>%
+  ggplot(aes(x = n, y = mean, col = model))+
+  geom_line()+
+  facet_wrap(~year)+
+  xlab("Forecast horizon")+
+  ylab("BIAS")
+dev.off()
+```
+
+
+```{r}
+#crps
+png("../DO_modeling_figures/15Apr20/crps_season7.png",width = 6, height = 4, units = "in", res = 300)
+all_model %>%
+  filter(!is.na(PLUS7_crps))%>%
+  ggplot(aes(x = as.Date(TODAY),y= PLUS7_crps, color = model))+
+  geom_line()+
+  facet_wrap(~year, scales = "free_x")+
+  xlab("")+
+  ylab("CRPS (7 day horizon)")
+dev.off()
+
+png("../DO_modeling_figures/15Apr20/crps_season14.png",width = 6, height = 4, units = "in", res = 300)
+all_model %>%
+  filter(!is.na(PLUS14_crps), year != 2017)%>%
+  ggplot(aes(x = as.Date(TODAY),y= PLUS14_crps, color = model))+
+  geom_line()+
+  facet_wrap(~year, scales = "free_x")+
+  xlab("")+
+  ylab("CRPS (14 day horizon)")
+dev.off()
+
+crps_all <- all_model[c(2,seq(45,ncol(all)))]
+crps_final = crps_all%>%
+  gather(day,crps,4:17)%>%
+  mutate(day_n = as.numeric(gsub("_crps",gsub("PLUS",day,replacement = ""),replacement = "")))%>%
+  group_by(model,year,day_n)%>%
+  summarize(crps = mean(crps, na.rm = T),
+            sd = sd(crps, na.rm = T))
+  #select(-day)
+
+png("../DO_modeling_figures/15Apr20/crps_horiz.png",width = 6, height = 4, units = "in", res = 300)
+crps_final%>%
+  ggplot(aes(x = day_n,y=crps, color = model))+
+  geom_line()+
+  facet_wrap("year")+
+  xlab("Forecast Horizon (days)")+
+  ylab("CRPS")+
+  scale_linetype_discrete(name = "",labels = c("all"))
+dev.off()
+```
+
+
 
 
 SKIP: this would plot parameter values over time

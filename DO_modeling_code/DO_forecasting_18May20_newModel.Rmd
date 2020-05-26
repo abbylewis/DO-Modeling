@@ -26,16 +26,15 @@ library(Metrics)
 Created 20 March 20 to convert my model to a forecasting framework
 - NOTE: got rid of the flexible hypo volume. I think that's what was destroying 2016
 - NOTE: I am saying data collected on the day of the forecast DOES get incorporated into the forecast
-- This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
+- NOTE: This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty (!!)
 
 To do:
-- Select the best parameters with the new model
-- See if new parameters make a difference
+- Rerun everything with new model
+- Look into old model to see if you can find ANY justification for using that (Carey paper?)
+- Do something with CRPS!
 - You don’t need to rerun everything up to yesterday! Just save and load
-- Formalize parameter selection procedure
 - Check observation error
 - Research oxygen max
-- Think about forecast story
 - Talk to Quinn about best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
 
 Done:
@@ -66,6 +65,8 @@ Done:
 - Linear regression of temperatures for each training year, use average DONE
 - Run forecasts in Bayes model (training data) to get parameter values DONE
 - Added CRPS
+- Select the best parameters with the new model
+- See if new parameters make a difference
 
 
 

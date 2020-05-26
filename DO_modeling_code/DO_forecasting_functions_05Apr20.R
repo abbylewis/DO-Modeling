@@ -10,8 +10,9 @@
 #' 
 sd_sum <- function(sd_df,name,year){ 
   out <- sd_df%>%
-    filter(!is.na(TODAY))%>%
-    select(seq(31,44))%>%
+    filter(!is.na(TODAY))
+  out <- out[,31:44]
+  out <- out%>%
     summarize_all(~mean(.,na.rm=T))%>%
     mutate(uncert = paste(name),
            year = year)
@@ -197,17 +198,6 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
 plot_hindcast <- function(est_out){
   par(mfrow = c(2,2))
   param_names = c("R20","theta","ko2","sss_scalar")
-  plot_param = function(est_out,num,name = "Parameter value"){
-    num = num+1
-    mean_param_est = apply(est_out$Y[num,,], 1, FUN = mean)
-    plot(mean_param_est ~ est_out$dates, type ='l', 
-         ylim = range(est_out$Y[num,,]),
-         col = 'grey', ylab = name, xlab ='', main = param_names[num-1])
-    for(i in 2:n_en){
-      lines(est_out$Y[num,,i] ~ est_out$dates, col = 'grey')
-    }
-    lines(mean_param_est ~ est_out$dates, col = 'black', lwd = 2)
-  }
   for(i in seq(1,length(param_names))){
     plot_param(est_out,i)
   }

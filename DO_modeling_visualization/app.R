@@ -46,7 +46,12 @@ ui <- fluidPage(theme = shinytheme("lumen"),
                     h4("Partitioned uncertainty over time"),
                     imageOutput("uncert_year"),br(),br(),
                     h4("Partitioned uncertainty as a function of forecast horizon"),
-                    imageOutput("uncert_all")
+                    imageOutput("uncert_all"),
+                    h3("CRPS"),
+                    imageOutput("crps7"),
+                    imageOutput("crps_horiz"),
+                    h3("Bias"),
+                    imageOutput("bias")
                   )
                 )
 )
@@ -101,6 +106,30 @@ server <- function(input, output, session) {
     list(src = filename,
          height=height,
          alt = paste("Second uncertainty figure failed to load"))
+  }, deleteFile = F)
+  
+  output$crps7 <- renderImage({
+    filename <- "./06May20/crps_season7.png"
+    height <- session$clientData$output_preImage_height
+    list(src = filename,
+         height=height,
+         alt = paste("CRPS figure failed to load"))
+  }, deleteFile = F)
+  
+  output$crps_horiz <- renderImage({
+    filename <- "./06May20/crps_horiz.png"
+    height <- session$clientData$output_preImage_height
+    list(src = filename,
+         height=height,
+         alt = paste("Second CRPS figure failed to load"))
+  }, deleteFile = F)
+  
+  output$bias <- renderImage({
+    filename <- "./06May20/bias_horizon.png"
+    height <- session$clientData$output_preImage_height
+    list(src = filename,
+         height=height,
+         alt = paste("Bias figure failed to load"))
   }, deleteFile = F)
   
   output$param <- renderImage({
