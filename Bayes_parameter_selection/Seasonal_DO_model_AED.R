@@ -7,8 +7,9 @@ model{
       y[k,j] ~ dnorm(mu[k,j],tau_obs)
       #process model for DO
       mu[k,j]~dnorm(lambda[k,j],tau_proc) 
-      lambda[k,j] <- mu[k,j-1]+SSS[k,j-1]-R20*theta^(temp[k,j-1]-20)*mu[k,j-1]/(mu[k,j-1]+ko2)*ifelse(SSS[k,j]>0, sss_scalar,1)
-    }
+      lambda[k,j] <- ifelse(dO2dt[k,j]>0,dO2dt[k,j],0)
+      dO2dt[k,j] <- mu[k,j-1]+SSS[k,j-1]-R20*theta^(temp[k,j-1]-20)*mu[k,j-1]/(mu[k,j-1]+ko2)*ifelse(SSS[k,j]>0, sss_scalar,1)
+      }
     
     
     #Loops through items in seasonal for-loop and defines initial conditions
@@ -19,7 +20,7 @@ model{
   }
   #### Priors
   tau_proc ~ dgamma(sh_proc,ra_proc)
-  R20 ~ dlnorm(beta.m_R20,beta.v_R20) 
+  R20 ~ dnorm(beta.m_R20,beta.v_R20) 
   theta ~ dnorm(beta.m_theta,beta.v_theta) 
   ko2 ~ dlnorm(beta.m_ko2,beta.v_ko2) 
   sss_scalar ~ dnorm(beta.m_sss_scalar,beta.v_sss_scalar)

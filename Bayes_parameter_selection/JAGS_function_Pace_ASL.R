@@ -12,10 +12,10 @@ jags_plug_ins <- function(model_name){
 #init are a range of initial conditions for parameters in each of 3 chains 
 
 #Seasonal_DO_model
-  data.Seasonal_DO_model_Pace <- list(y=y, year_no = year_no, beta.m_R10=log(.3),beta.m_theta=0.65,beta.m_ko2=log(.2), beta.m_sss_scalar=2.2, beta.v_R10=100, beta.v_theta=50,beta.v_ko2=50,beta.v_sss_scalar=10, SSS = SSS, temp = temp, season_days=season_days,tau_ic = 100,m_proc = 1,sd_proc = .1, m_obs = .2, sd_obs = .05)
+  data.Seasonal_DO_model_Pace <- list(y=y, year_no = year_no, beta.m_R10=log(.25),beta.m_theta=0.65,beta.m_ko2=log(.2), beta.m_sss_scalar=2.2, beta.v_R10=10, beta.v_theta=50,beta.v_ko2=50,beta.v_sss_scalar=10, SSS = SSS, temp = temp, season_days=season_days,tau_ic = 100,m_proc = 1,sd_proc = .1, m_obs = .2, sd_obs = .05)
   variable.names.Seasonal_DO_model_Pace <- c("tau_proc", "tau_obs","R10", "theta", "ko2","sss_scalar")
   variable.namesout.Seasonal_DO_model_Pace <- c("tau_proc", "tau_obs","mu","R10", "theta", "ko2","sss_scalar")
-  init.Seasonal_DO_model_Pace <- list(list(tau_proc=0.001, tau_obs = 0.01, R10=.3, theta=0.65, ko2=.2,sss_scalar =2.2), list(tau_proc=0.01,  tau_obs = .1, R10=.3, theta=0.65, ko2=.2,sss_scalar =2.2), list(tau_proc=1, tau_obs = .1, R10=.3, theta=0.65, ko2=.2,sss_scalar =2.2))
+  init.Seasonal_DO_model_Pace <- list(list(tau_proc=0.001, tau_obs = 0.01, R10=.25, theta=0.65, ko2=.2,sss_scalar =2.2), list(tau_proc=0.01,  tau_obs = .1, R10=.25, theta=0.65, ko2=.2,sss_scalar =2.2), list(tau_proc=1, tau_obs = .1, R10=.25, theta=0.65, ko2=.2,sss_scalar =2.2))
   params.Seasonal_DO_model_Pace <- c("tau_proc","R10", "theta","ko2","sss_scalar","tau_obs")
   
 

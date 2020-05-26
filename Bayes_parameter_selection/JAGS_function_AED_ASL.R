@@ -12,10 +12,10 @@ jags_plug_ins <- function(model_name){
 #init are a range of initial conditions for parameters in each of 3 chains 
 
 #Seasonal_DO_model
-  data.Seasonal_DO_model_AED <- list(y=y, year_no = year_no, beta.m_R20=log(.7),beta.m_theta=1.12,beta.m_ko2=log(.5), beta.m_sss_scalar=3, beta.v_R20=100, beta.v_theta=100000,beta.v_ko2=10,beta.v_sss_scalar=4, SSS = SSS, temp = temp, season_days=season_days,tau_ic = 100,m_proc = .1,sd_proc = .05, m_obs = .05, sd_obs = .02)
+  data.Seasonal_DO_model_AED <- list(y=y, year_no = year_no, beta.m_R20=log(.7),beta.m_theta=1.08,beta.m_ko2=log(.2), beta.m_sss_scalar=2.2, beta.v_R20=100, beta.v_theta=5000,beta.v_ko2=50,beta.v_sss_scalar=4, SSS = SSS, temp = temp, season_days=season_days,tau_ic = 100,m_proc = .1,sd_proc = .02, m_obs = .05, sd_obs = .02)
   variable.names.Seasonal_DO_model_AED <- c("tau_proc", "tau_obs","R20", "theta", "ko2","sss_scalar")
   variable.namesout.Seasonal_DO_model_AED <- c("tau_proc", "tau_obs","mu","R20", "theta", "ko2","sss_scalar")
-  init.Seasonal_DO_model_AED <- list(list(tau_proc=0.001, tau_obs = 0.01, R20=.7, theta=1.12, ko2=.5,sss_scalar =3), list(tau_proc=0.01,  tau_obs = .1, R20=.7, theta=1.12, ko2=.5,sss_scalar =3), list(tau_proc=1, tau_obs = .1, R20=.7, theta=1.12, ko2=.5,sss_scalar =3))
+  init.Seasonal_DO_model_AED <- list(list(tau_proc=0.001, tau_obs = 0.01, R20=.7, theta=1.08, ko2=.2,sss_scalar =2.2), list(tau_proc=0.01,  tau_obs = .1, R20=.7, theta=1.08, ko2=.2,sss_scalar =2.2), list(tau_proc=1, tau_obs = .1, R20=.7, theta=1.08, ko2=.2,sss_scalar =2.2))
   params.Seasonal_DO_model_AED <- c("tau_proc","R20", "theta","ko2","sss_scalar","tau_obs")
   
 
