@@ -43,7 +43,7 @@ no_O2_model <- function(times, states, parms, inputs){
   #INPUT
   SSS <- inputs[1]
   temp <- inputs[2]
-  O2_mgL <- inputs[3]
+  O2_mgL <- inputs[3] #average o2 for temp and SSS models
   
   #CALCULATIONS
   R = R20*theta^(temp-20)*O2_mgL/(O2_mgL+ko2)
