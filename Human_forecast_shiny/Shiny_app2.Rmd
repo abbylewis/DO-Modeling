@@ -23,11 +23,10 @@ Created by ASL
 April 2020
 
 TO DO
-- Deal with the connection between lines/put back people's previous guesses
 - Paired test comparing people to the model at each point
+- Deal with the connection between lines/put back people's previous guesses
 - Add grey dotted lines for oxygenation changes
 - Why the flash of data when you switch years
-- Mixed manager-model option (archive full model and display)
 - Have people input full name to start
 - Set up intervals that it progressively moves through
 
@@ -45,6 +44,7 @@ DONE
 - Set up a database to store point clicks/hover
 - Set up a widget to show people's RMSE
 - Don't show the whole season (but do show the past)
+- Mixed manager-model option (archive full model and display)
 
 
 
@@ -62,23 +62,20 @@ write_csv(human_model,"human_forecasts.csv")
 
 
 ```{r, include=FALSE}
-start_stop <- read.csv("start_stop.csv")
-start = as.Date(start_stop$start_all)
+start_stop <- read.csv("start_stop.csv") #load start and end dates for the stratified period of each summer
+start = as.Date(start_stop$start_all) #format as date
 stop = as.Date(start_stop$stop_all)
-year<-2019
+year<-2019 #initial year is 2019
 
-CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv") #load observations
 obs = CTD%>%
   filter(hypoVolume>0,
-         !is.na(Conc))%>%
+         !is.na(Conc))%>% 
   mutate(Date = as.Date(Date)) %>%
   select(Date, Conc)%>%
   rename(datetime = Date)%>%
   group_by(datetime)%>%
-  summarize(O2_mgL = mean(Conc))
-
-SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
-SSS$time <- as.Date(SSS$time)
+  summarize(O2_mgL = mean(Conc)) #create a dataframe with dates and oxygen measurements, with only one measurement per day
 
 temp = CTD %>%
   filter(hypoVolume>0,
@@ -87,190 +84,260 @@ temp = CTD %>%
   select(Date, Temp)%>%
   rename(datetime = Date)%>%
   group_by(datetime)%>%
-  summarize(Temp = mean(Temp))
+  summarize(Temp = mean(Temp)) #create a dataframe with dates and temperature measurements, with only one measurement per day
+
+SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") #load oxygenation data
+SSS$time <- as.Date(SSS$time)
 
 # Define UI
+# UI is composed of a title panel, a side panel (left), and a main panel. This function says where everything should go, and the next function actually adds the content in those locations
+#Each of the inputs and outputs here will be used/created in the server function below
 ui <- fluidPage(theme = shinytheme("lumen"),
-  titlePanel(h1("DO forecast",align = "center")),
+  titlePanel(h1("DO forecast",align = "center")), #Add title
   sidebarPanel(
-    selectInput(inputId = "year", label = strong("Forecast Year"),
+    #selectInput creates a dropdown menu with these years
+    selectInput(inputId = "year", label = strong("Forecast Year"), 
                 choices = c("2019","2018","2016","2015","2014","2013"),
                 selected = "2019"),
-    
-    sliderInput("date", strong("Forecast date"), value = min(start[year(start)==year])+14,
+    #sliderInput creates a slider that allows people to choose the date of the forecast
+    sliderInput("date", strong("Forecast date"), value = min(start[year(start)==year])+14, 
               min = min(start[year(start)==year])+14, max = max(stop[year(stop)==year]), step = 1),
+    #checkboxInput allows people to select whether they want to see the model or not
     checkboxInput("model","model"),
-    actionButton("reset", "reset"),uiOutput("next_forecast"),
+    #this actionButton allows people to reset their forecast (e.g. if they drew a forecast they didn't like)
+    actionButton("reset", "reset"),
+    #I am using uiOutput here instead of just having a button for the next forecast because I only want it to appear after people have submitted their forecast
+    uiOutput("next_forecast"),
+    #I am using uiOutput here because this is several lines of formatted text that will change depending on someone's input
     uiOutput("score_block")
   ),
 
     # Output: 
-mainPanel(
-    plotOutput("plot", hover=hoverOpts(id = "hover", delayType = "throttle", clip = TRUE, nullOutside = TRUE),
+  mainPanel(
+    plotOutput("plot", #this plot will be created below
+               #this allows me to track people's mouse movements:
+               hover=hoverOpts(id = "hover", delayType = "throttle", clip = TRUE, nullOutside = TRUE), 
+               #this allows me to track when people click on the plot:
                click="click"),
-    plotOutput("driver"), br(), br(), br(), br()
+    plotOutput("driver"), #this plot will be created below
+    br(), br(), br(), br() #line breaks to extend the page
   )
 )
 
 #Define server function
+#Every server function will take the same arguments: input, output, and session
 server <- function(input, output, session) {
-  
-  vals = reactiveValues(x=NULL, y=NULL)
-  draw = reactiveVal(FALSE)
-  plot_future_obs = reactiveVal(FALSE)
-  obs_now = reactiveValues(datetime = obs$datetime, O2_mgL = obs$O2_mgL)
+  vals = reactiveValues(x=NULL, y=NULL) #I am going to be storing the drawings people do in this "vals" object.
+  #To do so I need to create it here first. Reactive vals can change in your code, updating what appears in the shiny app
+  draw = reactiveVal(FALSE) #I am creating a variable called draw and setting it as FALSE
+  plot_future_obs = reactiveVal(FALSE) 
+  obs_now = reactiveValues(datetime = obs$datetime, O2_mgL = obs$O2_mgL) #creating a reactiveVals object to store observations
   
   observe({
-    #updateSelectInput(session = session, inputId = "year", label = strong("Forecast Year"),
-     #                 choices = c("2019","2018","2016","2015","2014","2013"), selected = input$year)
+    #observe if someone changes the year. If so, reset to the first day of that year
     updateSliderInput(session, "date", value = min(start[year(start)==input$year])+15, min = min(start[year(start)==input$year])+15, 
                       max = max(stop[year(stop)==input$year]))
   })
   
-  observeEvent(input$date,{
-    plot_future_obs(F)
-    vals$x <- NULL
+  observeEvent(input$date,{ #Observe if someone changes the forecast date
+    plot_future_obs(F) #Set plot_future_obs to FALSE. THis means that points past the forecast date will not be shown
+    vals$x <- NULL #Clear x and y values from the human-made forecast
     vals$y <- NULL
-    new_obs <- obs%>%
+    new_obs <- obs%>% #Select observations from this year before the forecast date
       filter(datetime <= input$date,
              datetime >= start[year(start)==input$year])
-    obs_now$datetime = new_obs$datetime; obs_now$O2_mgL = new_obs$O2_mgL
+    obs_now$datetime = new_obs$datetime; obs_now$O2_mgL = new_obs$O2_mgL #enter these new values into the current observations dataframe
   })
   
   
-  submitModal <- function() {
+  submitModal <- function() { #This creates the dialog box that pops up when you finish drawing your forecast
     modalDialog(
-      span('Great forecast! Is that your final answer?'),
+      span('Great forecast! Is that your final answer?'), 
       
       footer = tagList(
-        actionButton("reset2", "reset"),
+        actionButton("reset2", "reset"), #these buttons will be defined later in the code
         actionButton("submit", "submit")
       )
     )
   }
   
-  observeEvent(input$click, handlerExpr = {
-    if(draw()) {
-      draw(F)
+  observeEvent(input$click, handlerExpr = { #Observe if someone clicks on the graph
+    if(draw()) { #If the person is currently drawing
+      draw(F) #Stop drawing (set the variable "draw" to FALSE, this will be used later in the code)
       vals$x <- c(vals$x, NA)
       vals$y <- c(vals$y, NA)
     }
-    if(!draw()){
-      if(input$click$x > max(obs_now$datetime)-2 & input$click$x < max(obs_now$datetime)+2){
-        draw(T)
-        vals$x <- c(vals$x, max(obs_now$datetime))
+    if(!draw()){ #If they are not already drawing
+      if(input$click$x > max(obs_now$datetime)-2 & input$click$x < max(obs_now$datetime)+2){ #If they clicked in the right place
+        draw(T) #Start drawing
+        #No matter where exactly they clicked, start the line from where they were supposed to click:
+        vals$x <- c(vals$x, max(obs_now$datetime)) 
         vals$y <- c(vals$y, obs_now$O2_mgL[which.max(obs_now$datetime)])
+        #The rest of the line will be created by hovering (function below)
       }
     }
   })
   
-  observeEvent(input$hover, {
-    if (draw()) {
+  observeEvent(input$hover, {#Observe if the person is hovering their cursor over the graph
+    if (draw()) {#If "draw" is set to TRUE (they are currently drawing)
+      #If they are hovering in a valid location
       if(input$hover$x <= input$date+14 & input$hover$x >= max(obs_now$datetime) & input$hover$x <= max(stop[year(stop)==input$year])){
-        if(input$hover$x>vals$x[length(vals$x)]){
-          vals$x <- c(vals$x, input$hover$x)
+        if(input$hover$x>vals$x[length(vals$x)]){#This prevents the line from doubling back
+          vals$x <- c(vals$x, input$hover$x)# Add their current location to the list of values for their drawing
           vals$y <- c(vals$y, input$hover$y)
         }
       }
+      #If they go beyond the end of the forecast period, submit the forecast
       if(input$hover$x >= input$date+14 | input$hover$x >= max(stop[year(stop)==input$year])){
-        vals$x <- c(vals$x, input$date+14)
+        vals$x <- c(vals$x, input$date+14)# The final x value is the last day of the forecasting period
         vals$y <- c(vals$y, input$hover$y)
-        draw(F)
-        showModal(submitModal())
+        draw(F) #Stop drawing
+        showModal(submitModal()) #Show the submit forecast modal
       }
   }})
   
-  observeEvent(input$reset, handlerExpr = {
+  observeEvent(input$reset, handlerExpr = { #If someone presses reset, clear their drawing and do not plot future observations
     vals$x <- NULL; vals$y <- NULL
     plot_future_obs(F)
   })
   
   observeEvent(input$reset2, handlerExpr = {
-    vals$x <- NULL; vals$y <- NULL
+    vals$x <- NULL; vals$y <- NULL #If someone presses reset from the submit forecast modal, do the same thing
     removeModal()
   })
   
-  observeEvent(input$submit, handlerExpr = {
-    results <- read_csv("human_forecasts.csv")
-    x_raw <- as.Date(vals$x[!is.na(vals$x)], origin = "1970-01-01")
-    y_raw <- vals$y[!is.na(vals$x)]
+  #This long function takes peoples submitted forecasts, saves them in a spreadsheet, 
+  #plots future observations, and shows them how well they did
+  observeEvent(input$submit, handlerExpr = { 
+    results <- read_csv("human_forecasts.csv") #load previous forecasts
+    x_raw <- as.Date(vals$x[!is.na(vals$x)], origin = "1970-01-01") #convert the x values from hovering into dates
+    y_raw <- vals$y[!is.na(vals$x)] #Same for y vals
+    #The goal with the next couple of lines of code is to get oxygen predictions at each date.
+    #First, get the desired dates:
     x <- seq(as.Date(input$date, origin = "1970-01-01"),(as.Date(input$date, origin = "1970-01-01")+14),by = 1)
-    y <- approx(x_raw,y_raw,x)$y
-    time_created <- Sys.time()
-    initials <- "TEST"
-    TODAY <- as.Date(input$date, origin = "1970-01-01")
-    to_submit <- data.frame(TODAY,x,y,initials,time_created)
-    results = results %>%
+    y <- approx(x_raw,y_raw,x)$y #Now approximate values at those points
+    time_created <- Sys.time() #Get the time the forecast was made to add to the saved data
+    initials <- "TEST" #Save who did the forecast. Right now this is always set to TEST
+    TODAY <- as.Date(input$date, origin = "1970-01-01") #Get the date of the forecast 
+    to_submit <- data.frame(TODAY,x,y,initials,time_created) #put these together in a dataframe
+    results = results %>% #add to the forecasts that had already been made
       full_join(to_submit)
-    write_csv(results,"human_forecasts.csv")
+    write_csv(results,"human_forecasts.csv") #upload
     
-    obs_future <- obs%>%
+    #Next, we need to get observations to compare to the forecasts people made. 
+    obs_future <- obs%>% # Filter to only include future observations
       filter(datetime >= as.Date(input$date, origin = "1970-01-01"),
              datetime <= as.Date(input$date, origin = "1970-01-01")+14)%>%
-      left_join(to_submit,by = c("datetime" = "x"))
+      left_join(to_submit,by = c("datetime" = "x")) #Add peoples observations
         
-    output$score_block = renderUI({tagList(
-      hr(),
-      h3("Your guess was off by an average of:"),
-      h1(paste(round(rmse(obs_future$O2_mgL, obs_future$y),2),"mg/L"))
+    output$score_block = renderUI({tagList( #Create a score board that shows RMSE
+      hr(), #horizontal line
+      h3("Your guess was off by an average of:"), #text
+      h1(paste(round(rmse(obs_future$O2_mgL, obs_future$y),2),"mg/L")) #score
     )})
     
-    removeModal()
-    plot_future_obs(T)
+    removeModal() 
+    plot_future_obs(T) #DO plot future observations!
   })
   
+  
+  #Now, lets put together the plot itself
   output$plot= renderPlot({
-    plot(x=obs_now$datetime, y=obs_now$O2_mgL, pch = 19, cex = 1, ylab="Oxygen concentration (mg/L)", xlab="", type="p", xlim = c(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,20))
-    rect(xleft = max(obs_now$datetime), xright = min(input$date+14, max(stop[year(stop)==input$year])), ybot = -5, ytop = 25, col = "lightgray", alpha = .5, border = NA)
+    
+    plot(x=obs_now$datetime, y=obs_now$O2_mgL, #plot oxygen over time
+         type="p", pch = 19, cex = 1, #format points
+         ylab="Oxygen concentration (mg/L)", 
+         xlab="", 
+         xlim = c(start[year(start)==input$year], #plot from the start of the year to 15 days past the day of the forecast
+                  min(as.Date(input$date, origin = "1970-01-01")+15,
+                      max(stop[year(stop)==input$year]))), #Unless the end of the forecast interval is past the end of the summer
+         ylim = c(0,20))
+    
+    #Add a grey rectangle to indicate the forecast period
+    rect(xleft = max(obs_now$datetime), #From the last observation
+         xright = min(input$date+14, max(stop[year(stop)==input$year])), #To the end of the forecast period
+         ybot = -5, #Extend past the top and bottom of the plot
+         ytop = 25, 
+         col = "lightgray", alpha = .5, border = NA)
+    
+    #If they have selected to also show the model, pllot that on top
     if(input$model){
-      date = format(as.Date(input$date, origin = "1970-01-01"),"%d%b%y")
-      archived <- read.csv(paste("../Archived_forecasts/29Apr20/",input$year,"/",date,".csv",sep = ""))
+      #Format the date as it is used in the filename for the archived forecast
+      date = format(as.Date(input$date, origin = "1970-01-01"),"%d%b%y") 
+      #Read in an archived forecast to display:
+      archived <- read.csv(paste("../Archived_forecasts/29Apr20/",input$year,"/",date,".csv",sep = "")) 
+      #Calculate the mean of forecast ensembles
       mean_o2_est = apply(archived[,-1], 1, FUN = mean) 
-      archived$dates <- seq(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+14,max(stop[year(stop)==input$year])),by = 1)
+      #Add dates to the archived forecast
+      archived$dates <- seq(start[year(start)==input$year], 
+                            min(as.Date(input$date, origin = "1970-01-01")+14,max(stop[year(stop)==input$year])),by = 1)
+      #Plot each ensemble member
       for(i in 2:101){
         lines(archived[,i] ~ archived$dates, 
               col = 'slateblue1')
       }
+      #Plot the mean
       lines(mean_o2_est ~ archived$dates, col = 'black', lwd =2)
     }
+    #Add points for past observations
     points(x=obs_now$datetime, y=obs_now$O2_mgL, pch = 19, cex = 1)
+    #Add a distinct point for the most recent observation
     points(x=max(obs_now$datetime), y=obs_now$O2_mgL[which.max(obs_now$datetime)],pch = 19, col = "red", cex = 2)
+    #Add a vertical line for the date
     abline(v=input$date, lwd = 3)
+    #Add a line with the human-made forecast
     lines(x=vals$x, y=vals$y, lwd=2)
+    #Write TODAY to indicate what the vertical line means
     mtext(text = "TODAY",at = c(input$date,18))
+    #If plot_future_obs is true, do so
     if(plot_future_obs()){
-      obs_future <- obs%>%
+      obs_future <- obs%>% #Filter observations to get only future observations
         filter(datetime >= input$date,
                datetime <= input$date+14)
-      points(x=obs_future$datetime, y=obs_future$O2_mgL, pch = 19, cex = 1, col = "blue")
+      points(x=obs_future$datetime, y=obs_future$O2_mgL, pch = 19, cex = 1, col = "blue") #Plot them in blue
     }
   })
   
+  #Plot driver data to use in creating human-made forecasts
   output$driver = renderPlot({
-    par(mfrow = c(2,1), mar = c(0.3, 4.1, 3.7, 2.1), oma = c(0,0,0,0))
-    sss_now = SSS%>%
+    par(mfrow = c(2,1), mar = c(0.3, 4.1, 3.7, 2.1), oma = c(0,0,0,0)) #Set margins to make it look nice
+    sss_now = SSS%>% #Filter the oxygenation dataframe to the correct dates
       filter(time <= input$date + 14,
              time >= start[year(start)==input$year])
-    plot(start[1],-10, xlim = c(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,0.7), xlab = "",xaxt = "n", ylab = "Oxygenation (scfm)")
+    plot(start[1],-10, #Create a blank plot with the correct margins and axis text
+         xlim = c(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))),
+         ylim = c(0,0.7), 
+         xlab = "",xaxt = "n", ylab = "Oxygenation (scfm)")
+    #Draw a rectangle for the forecast period (as above)
     rect(xleft = max(obs_now$datetime), xright = min(input$date+14, max(stop[year(stop)==input$year])), ybot = -1, ytop = 1, col = "lightgray", alpha = .5, border = NA)
+    #Plot oxygen over time
     lines(x = sss_now$time, y = sss_now$scfm, lwd = 2, col = "blue")
+    #Add a line for "TODAY"
     abline(v=input$date, lwd = 3)
+    #Label the plot
     mtext("Drivers", line = 1.5, cex = 2)
     
-    par(mar = c(4, 4.1, 0, 2.1))
-    temp_now = temp%>%
+    #Now plot temperature
+    par(mar = c(4, 4.1, 0, 2.1)) #set margins
+    temp_now = temp%>% #filter to the correct days
       filter(datetime <= input$date,
              datetime >= start[year(start)==input$year])
+    #Create a blank plot
     plot(start[1],-10, xlim = c(start[year(start)==input$year], min(as.Date(input$date, origin = "1970-01-01")+15,max(stop[year(stop)==input$year]))), ylim = c(0,20), ylab = "Temp. (ºC)", xlab = "")
+    #Add data
     lines(x = temp_now$datetime, y = temp_now$Temp, lwd = 2, col = "red")
+    #Add a rectangle
     rect(xleft = max(obs_now$datetime), xright = (input$date+14), ybot = -5, ytop = 25, col = "lightgray", alpha = .5, border = NA)
+    #Add a vertical line
     abline(v=input$date, lwd = 3)
   })
   
+  #If the forecast has been submitted, plot_future_obs() will be marked TRUE. In that case, add a next forecast button to the side panel
   output$next_forecast <-renderUI(expr = if (plot_future_obs()) {
     actionButton("next_forecast","next")
     } else {NULL})
   
+  #If someone clicks the next forecast button, advance the forecast date by 2 weeks
   observeEvent(input$next_forecast, handlerExpr = {
     updateSliderInput(session, "date", value = input$date+14, min = min(start[year(start)==input$year])+15, 
                       max = max(stop[year(stop)==input$year]))
