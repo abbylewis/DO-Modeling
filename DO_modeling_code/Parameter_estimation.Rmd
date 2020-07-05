@@ -1,0 +1,164 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(smoof)
+library(cmaesr)
+library(tidyverse)
+source('EnKF_functions_05Apr20_uncert.R')
+source('DO_forecasting_functions_05Apr20.R')
+source('O2_models_24Mar20.R')
+library(lubridate)
+library(readxl)
+library(zoo)
+library(Metrics)
+```
+
+```{r}
+n_en = 100 # number of ensembles 
+# coefficient of variation (CV) as a representation of uncertainty 
+param_cv = c(R20 = .3,
+             theta = .02,
+             ko2 = .2,
+             sss_scalar = .1)
+driver_cv = c(SSS = .2,
+              temp = .1,
+              o2_mgL = 0) # Coefficient of variation of driver data 
+init_cond_cv = 0.05
+proc_sd <- 0.1 #Calculated below (last code chunk)
+obs_cv = 0.05
+```
+
+```{r}
+#Create observations dataframe
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+CTD = CTD%>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date))
+obs <- CTD %>%
+  filter(!is.na(Conc))%>%
+  dplyr::select(Date, Conc)%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(O2_mgL = mean(Conc))
+
+mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
+median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
+
+#Create driver data frame (called model_inputs)
+SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+SSS$time <- as.Date(SSS$time)
+  
+#start_all = as.Date(c("2013-05-30","2014-06-02","2015-05-28","2016-06-01","2017-06-28","2018-06-04","2019-06-03"))
+#stop_all = as.Date(c("2013-09-25","2014-10-04","2015-09-28","2016-09-30","2017-07-12","2018-10-22","2019-10-30"))
+#write.csv(data.frame(start_all,stop_all),"../DO_modeling_data/start_stop.csv")
+start_stop <- read.csv("../DO_modeling_data/start_stop.csv")
+start_all = as.Date(start_stop$start_all)
+stop_all = as.Date(start_stop$stop_all)
+avgs <- calc_avg(start_all,stop_all,CTD,SSS)
+avg_temp<-unlist(avgs[1])
+avg_o2<-unlist(avgs[2])
+avg_hypoVolume<-unlist(avgs[3])
+CTD$hypoVolume<-avg_hypoVolume
+
+temp_slope = 0.03937878
+```
+
+```{r}
+param_est_fun <- function(parms){
+  print(parms)
+  results_year <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+  rmse_year <- createRmseDF(n_days, results_year) # Calculate rmse for all days
+  return(mean(rmse_year$val, na.rm = T))
+}
+```
+
+```{r}
+#Specifications
+  run_space <- 1 #Number of days between runs of the model
+  n_days <- 14 #Forecast horizon
+  model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
+  gif = F
+  uncert = "all" #Options = "all","init","driver","param","proc"
+  date <- format(Sys.Date(),"%d%b%y")
+  archiveForecasts = F
+  year = 2013
+  
+  start = start_all[year(start_all)==year]
+  stop = stop_all[year(stop_all)==year]
+
+#R20 <- makeNumericParam(
+#  "R20",
+#  lower = 0.3,
+#  upper = 1.1
+#)
+#
+#theta <- makeNumericParam(
+#  "theta",
+#  lower = 1.05,
+#  upper = 1.3,
+#  default = 1.08
+#)
+#
+#ko2 <- makeNumericParam(
+#  "ko2",
+#  lower = 0.1,
+#  upper = 0.5,
+#  default = 0.2
+#)
+#
+#sss_scalar <- makeNumericParam(
+#  "sss_scalar",
+#  lower = 2,
+#  upper = 4,
+#  default = 3
+#)
+
+par.set = makeNumericParamSet(len = 4L, id = "parms",
+                              lower = c(.5,1.04,.1,2), upper = c(1,1.3,.7,4),vector = TRUE)
+
+objective.fun = makeSingleObjectiveFunction(name = paste(year), 
+                                           id = NULL,
+                                           description = paste0("enKF DO function for ",year), 
+                                           fn = param_est_fun, 
+                                           par.set = par.set,
+                                           noisy = F, 
+                                           fn.mean = NULL,
+                                           minimize = T, 
+                                           vectorized = F, 
+                                           constraint.fn = NULL)
+
+cmaes(objective.fun, start.point = c(.7,1.08,.2,3))
+```
+
+Example
+```{r}
+library(smoof)
+fn <- makeSingleObjectiveFunction(
+  name = "2D-Sphere",
+  fn = function(x) x[1]^2 + x[2]^2,
+  par.set = makeNumericParamSet(
+  len = 2L, id = "x",
+  lower = c(-10, -10), upper = c(10, 10),
+  vector = TRUE
+  ),
+  tags = "unimodal",
+  global.opt.param = c(0, 0),
+  global.opt.value = 0
+)
+library(cmaesr)
+cmaes(fn)
+
+fn(list(0,0))
+```
+
+
+

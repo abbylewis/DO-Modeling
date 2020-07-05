@@ -114,9 +114,10 @@ inputs_year<- function(start, stop, CTD, SSS){
 #' @param uncert type of uncertainty ("all", "driver","param","init","proc")
 #' @return enKF results
 #' 
-run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all"){
+run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all", parms){
   obs = obs%>%
     filter(datetime<=today)
+  #print(obs[1,2])
   inputs = inputs%>%
     filter(Date<=stop, 
            Date>=start,
@@ -141,9 +142,9 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
   model_inputs<- data.frame(model_inputs)
   
   #Set initial conditions
-  yini <- c(
-    O2_mgL = inputs$Conc[inputs$Date == start]
-  )
+  #yini <- c(
+  #  O2_mgL = inputs$Conc[inputs$Date == start]
+  #)
   if(model_name %in% c("temp","SSS")){
     est_out = EnKF(n_en = n_en, 
                    start = start,
@@ -354,7 +355,7 @@ createRmseDF_filt <- function(n_days, results, obs){
 #' @return results dataframe with predctions (forecasted), future observations, and 
 #' variance of ensemples at each forecast horizon
 #' 
-runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30, model_name = "full",avg_o2,avg_temp,uncert){
+runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiveForecasts = FALSE, remove = FALSE, delay = 30, model_name = "full",avg_o2,avg_temp,uncert,parms){
   #Model types = full (""), temp ("_temp"), o2 ("_o2")
   if(model_name == "full"){model = ""}
   if(model_name == "temp"){model = "_temp"}
@@ -367,7 +368,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   obs_allDates <- extendObsDF(start,stop,obs)
   #Create inputs (drivers) for this year
   inputs_thisYear <- inputs_year(start,stop, CTD, SSS)
-  if(model_name == "temp"|model_name == "SSS"){inputs_thisYear$Conc <- avg_o2}
+  if(model_name == "temp"|model_name == "SSS"){inputs_thisYear$Conc <- avg_o2}  ### Need to adjust this for param est
   if(model_name == "o2"|model_name == "SSS"){inputs_thisYear$Temp <- avg_temp}
   today <- start
   if(gif == TRUE){
@@ -383,44 +384,32 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   while(today < stop){
     row<- as.numeric(difftime(today,start))/run_space+1
     cols <- n_days*2+1
-    check = tryCatch({ #Check if I get an error that the matrix is singular
-      est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert)
-      TRUE
-    },
-    error = function(e){
-      FALSE
-    })
-    if(check == TRUE){ #If there is no error
-      mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
-      mean_o2_est_short <- mean_o2_est[(row+1):min(length(mean_o2_est),(row+n_days))]
-      var_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = var)
-      var_o2_est_short = var_o2_est[(row+1):min(length(var_o2_est),(row+n_days))]
-      obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
-      if(length(obs_toAdd)<n_days){
-        obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))
-      }
-      results[row,(2+n_days):(1+2*n_days)]<- obs_toAdd
-      results[row,2:(1+n_days)]<-c(mean_o2_est_short,rep(NA,(n_days-length(mean_o2_est_short))))
-      results[row,(2+2*n_days):(1+3*n_days)]<-c(var_o2_est_short,rep(NA,(n_days-length(var_o2_est_short))))
-      results[row,1]<-today
-      if(gif == TRUE){
-        plot_o2(est_thisYear, today, start, stop)
-      }
-      if(archiveForecasts == TRUE){
-        dateRun <- format(Sys.Date(),"%d%b%y")
-        year <- year(start)
-        dir1.1 <- paste("../Archived_forecasts",dateRun,sep = "/")
-        dir2.1<-paste(dir1.1,"/",year,model,sep = "")
-        dir.create(dir1.1)
-        dir.create(dir2.1)
-        write.csv(est_thisYear$Y[1,,], paste(dir2.1,"/",format(today,"%d%b%y"),".csv",sep = ""))
-      }
-      today <- today+run_space
-    }else{ #If there was an error
-      results[row,1]<-today
-      results[row:nrow(results),(2+2*n_days):(1+3*n_days)]<-0
-      today<-stop
+    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert, parms = parms)
+    mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
+    mean_o2_est_short <- mean_o2_est[(row+1):min(length(mean_o2_est),(row+n_days))]
+    var_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = var)
+    var_o2_est_short = var_o2_est[(row+1):min(length(var_o2_est),(row+n_days))]
+    obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
+    if(length(obs_toAdd)<n_days){
+      obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))
     }
+    results[row,(2+n_days):(1+2*n_days)]<- obs_toAdd
+    results[row,2:(1+n_days)]<-c(mean_o2_est_short,rep(NA,(n_days-length(mean_o2_est_short))))
+    results[row,(2+2*n_days):(1+3*n_days)]<-c(var_o2_est_short,rep(NA,(n_days-length(var_o2_est_short))))
+    results[row,1]<-today
+    if(gif == TRUE){
+      plot_o2(est_thisYear, today, start, stop)
+    }
+    if(archiveForecasts == TRUE){
+      dateRun <- format(Sys.Date(),"%d%b%y")
+      year <- year(start)
+      dir1.1 <- paste("../Archived_forecasts",dateRun,sep = "/")
+      dir2.1<-paste(dir1.1,"/",year,model,sep = "")
+      dir.create(dir1.1)
+      dir.create(dir2.1)
+      write.csv(est_thisYear$Y[1,,], paste(dir2.1,"/",format(today,"%d%b%y"),".csv",sep = ""))
+    }
+    today <- today+run_space
   }
   if (gif == TRUE){
     convert <- paste("convert -delay ",delay," ",dir2,"/forecast*.png ",dir2,"/animated_forecast.gif", sep = "")
@@ -433,6 +422,21 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
     if(remove == TRUE){
       file.remove(list.files(pattern=".png"))
     }
+  }
+  saved_R20 <-   as.data.frame(est_thisYear$Y[2,,], col.names = seq(1,n_en))
+  saved_theta <- as.data.frame(est_thisYear$Y[3,,], col.names = seq(1,n_en))
+  saved_ko2 <-   as.data.frame(est_thisYear$Y[4,,], col.names = seq(1,n_en))
+  saved_sss <-   as.data.frame(est_thisYear$Y[5,,], col.names = seq(1,n_en))
+  if(uncert == "all"){
+    saved_params <- saved_R20 %>% mutate(Var = "R20",Date = row.names(saved_R20)) %>%
+      full_join(saved_theta   %>% mutate(Var = "theta",Date = row.names(saved_R20)))%>%
+      full_join(saved_ko2     %>% mutate(Var = "ko2",Date = row.names(saved_R20)))%>%
+      full_join(saved_sss     %>% mutate(Var = "sss",Date = row.names(saved_R20)))%>%
+      pivot_longer(1:100, "Sim")
+    date <- format(Sys.Date(),"%d%b%y")
+    dir.create(paste("../DO_modeling_results/",date,sep = ""))
+    year <- year(start)
+    write.csv(saved_params,paste("../DO_modeling_results/",date,"/params_",year,"_",model_name,".csv", sep = ""))
   }
   return(results)
 }

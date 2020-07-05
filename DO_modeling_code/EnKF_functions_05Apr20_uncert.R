@@ -113,17 +113,20 @@ get_obs_matrix = function(obs_df, model_dates, n_step, n_states){
 ##' @param cur_step current model timestep
 kalman_filter = function(Y, R, obs, H, n_en, cur_step){
   
-  cur_obs = obs[ , , cur_step] #ADD OBS ERROR
+  cur_obs = obs[ , , cur_step] #This is a single number for the current observation
   
   #cur_obs = ifelse(is.na(cur_obs), 0, cur_obs) # setting NA's to zero so there is no 'error' when compared to estimated states
   
   ###### estimate the spread of your ensembles #####
-  Y_mean = matrix(apply(Y[ , cur_step, ], MARGIN = 1, FUN = mean), nrow = length(Y[ , 1, 1])) # calculating the mean of each temp and parameter estimate
-  delta_Y = Y[ , cur_step, ] - matrix(rep(Y_mean, n_en), nrow = length(Y[ , 1, 1])) # difference in ensemble state/parameter and mean of all ensemble states/parameters
+  Y_mean = matrix(apply(Y[ , cur_step, ], MARGIN = 1, FUN = mean), nrow = length(Y[ , 1, 1])) # calculating the mean of each temp and parameter estimate; you end up with one value for oxygen and one for each parameter
+  delta_Y = Y[ , cur_step, ] - matrix(rep(Y_mean, n_en), nrow = length(Y[ , 1, 1])) # difference in ensemble state/parameter and mean of all ensemble states/parameters; this is a full matrix with all ensembles
+  
+  #Covariance inflation
+  covar_inflat <- 1#rnorm(mean = 1, n = 1)
   
   ###### estimate Kalman gain #########
-  K = ((1 / (n_en - 1)) * delta_Y %*% t(delta_Y) %*% matrix(t(H[, , cur_step]))) %*%
-    qr.solve(((1 / (n_en - 1)) * H[, , cur_step] %*% delta_Y %*% t(delta_Y) %*% matrix(t(H[, , cur_step])) + R[, , cur_step]))
+  K = ((1 / (n_en - 1)) * covar_inflat * delta_Y %*% t(delta_Y) %*% matrix(t(H[, , cur_step]))) %*% #H is the observation identity matrix
+    qr.solve(((1 / (n_en - 1)) * H[, , cur_step] %*% delta_Y %*% t(delta_Y) %*% matrix(t(H[, , cur_step])) + R[, , cur_step])) #R is the observation error matrix
   
   ###### update Y vector ######
   for(q in 1:n_en){
@@ -138,23 +141,23 @@ kalman_filter = function(Y, R, obs, H, n_en, cur_step){
 #'
 #' @param Y Y vector
 #' @param obs observation matrix
-initialize_Y = function(Y, obs, init_params, n_states_est, n_params_est, n_params_obs, n_step, n_en, state_sd, param_sd){
+initialize_Y = function(Y,o2_init, init_params, n_states_est, n_params_est, n_params_obs, n_step, n_en, state_sd, param_sd){
   
   # initializing states with earliest observations and parameters
-  first_obs = coalesce(!!!lapply(seq_len(dim(obs)[3]), function(i){obs[,,i]})) %>% # turning array into list, then using coalesce to find first obs in each position.
-    ifelse(is.na(.), mean(., na.rm = T), .) # setting initial temp state to mean of earliest temp obs from other sites if no obs
-  
+  first_obs = o2_init #coalesce(lapply(seq_len(dim(obs)[1]), function(i){obs[,,i]})) %>% # turning array into list, then using coalesce to find first obs in each position.
+    #ifelse(is.na(.), mean(., na.rm = T), .) # setting initial temp state to mean of earliest temp obs from other sites if no obs
+  paste(first_obs)
   if(n_params_est > 0){
-    ## update this later *********************** <- ASL: not sure what this is. I didn't leave this comment. Has it been updated?
     first_params = init_params
   }else{
     first_params = NULL
   }
   
   Y[ , 1, ] = array(abs(rnorm(n = n_en * (n_states_est + n_params_est),
-                              mean = c(first_obs, first_params),
+                              mean = c(unlist(first_obs), first_params),
                               sd = c(state_sd, param_sd))),
                     dim = c(c(n_states_est + n_params_est), n_en))
+  #print(Y[,1,])
   
   return(Y)
 }
@@ -283,7 +286,7 @@ EnKF = function(n_en = 100,
   #yini
   o2_init = obs_df$O2_mgL[min(which(!is.na(obs_df$O2_mgL)))]
   
-  state_cv = obs_cv #coefficient of variation of O2 observations (made up)
+  state_cv = obs_cv #coefficient of variation of O2 observations
   state_sd = state_cv * o2_init #because cv = sd/mean
   init_cond_sd = init_cond_cv * o2_init 
   
@@ -322,7 +325,7 @@ EnKF = function(n_en = 100,
                         obs = obs)
   
   # initialize Y vector
-  Y = initialize_Y(Y = Y, obs = obs, init_params = parm_init, n_states_est = n_states_est,
+  Y = initialize_Y(Y = Y, o2_init = o2_init, init_params = parm_init, n_states_est = n_states_est,
                    n_params_est = n_params_est, n_params_obs = n_params_obs,
                    n_step = n_step, n_en = n_en, state_sd = init_cond_sd, param_sd = param_sd)
   
@@ -365,7 +368,7 @@ EnKF = function(n_en = 100,
         delta_o2 <- Y[1, t-1, n]+rnorm(1,mean = 0, sd = proc_sd) #Add process error
       } else {delta_o2 <- Y[1, t-1, n]}
       #For oxygen I am adding the differential change to the original value
-      Y[1 , t, n] = model_output$O2_mgL+delta_o2 # store in Y vector. 
+      Y[1, t, n] = model_output$O2_mgL+delta_o2 # store in Y vector. 
       if(Y[1 , t, n]<0){Y[1 , t, n]<-0}
       Y[2 , t, n] = model_output[,2]
       Y[3 , t, n] = model_output[,3]

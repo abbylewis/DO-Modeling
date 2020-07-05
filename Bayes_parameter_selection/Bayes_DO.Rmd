@@ -14,6 +14,8 @@ Copied from Mary's file but set up as .Rmd
 2020-02-04: Model is running and generally works well! Issues with 2016, 2015, and 2014. 2018 has insane uncertainty
 2020-02-19: Updated with parameter values and model structure from GLM-AED. Used a log-normal distribution so that ko2 and R20 shouldn't be able to go negative. 2016 is pretty good now, but everything else is worse.
 2020-04-15: Updating Bayes work to match EnKF and choose initial parameters. This is not even close to complete
+2020-06-11: Trying to not have o2 go above 100 mg/l.....
+
 ```{r}
 # State-space model - revised by S. LaDeau (11/2017) from the EcoForecast Activity by Michael Dietze, with reference "Ecological Forecasting", chapter 8
 # ========================================================
@@ -30,15 +32,16 @@ library(moments)
 library(geosphere)
 library(lubridate)
 source('./JAGS_function_AED_ASL.R') 
+#source('./JAGS_function_noO2.R') 
 ```
 
 
 - Things to note from model changes. Currently not including inflow, outflow, or entrainment
-- No idea how to choose distributions
+
 ```{r}
 #1) Model options => pick date range, site, time step, and type of model -----------------------------------------------------
 
-model_name = 'Seasonal_DO_model_AED' # options are Seasonal_DO_model_AED and Seasonal_DO_model_Pace
+model_name = 'Seasonal_DO_model_AED' # options are Seasonal_DO_model_AED, Seasonal_DO_model_Pace, Seasonal_DO_model_noO2
 #Creating my own model in this file
 model=paste0("./",model_name, '.R')
 
@@ -51,7 +54,7 @@ Updated with my observations and driver data
 #2) read in and visualize data ------------------------------------------------------------------------------------------------------------
 #Edit working directory to be where file is stored on your computer
 start_stop = read_csv("../DO_modeling_data/start_stop.csv")
-year <- 2013
+year <- 2016
 
 obs = read_csv("DO_observed_daily.csv") %>%
   mutate(datetime = as.Date(datetime))%>%
@@ -69,11 +72,14 @@ drivers <- read_csv("driver_data.csv")%>%
   filter(year(datetime) == year,
          datetime<=start_stop$stop_all[year(start_stop$stop_all) == year],
          datetime>=start_stop$start_all[year(start_stop$start_all) == year])
-SSS     <- t(drivers$SSS)
+SSS     <- t(drivers$SSS_notVW)
 inflow  <- t(drivers$inflow)
 outflow <- t(drivers$outflow)
 entrain <- t(drivers$entrain)
 temp    <- t(drivers$temp)
+#If model = o2:
+#temp <- t(rep(12.13369,nrow(drivers)))
+o2 <- t(rep(6.652655,nrow(drivers)))
 vol     <- t(drivers$hypo_volume)
   
 #setting objects that are referred to in model
@@ -118,7 +124,6 @@ for (i in 1:length(params)){
   dev.off()
 }
 
-
 #need to view this to get parameter estimates for model comparison Excel file
 sum <- summary(jags.out, vars = jags_plug_ins$variable.names.model)
 
@@ -127,6 +132,13 @@ sink(file = file.path("./JAGS_outputs/",paste(year,paste0(model_name,'_param_sum
 print("Parameter summary")
 sum
 sink()
+
+
+summary(jags.out, vars = params[2])
+summary(jags.out, vars = params[3])
+summary(jags.out, vars = params[4])
+summary(jags.out, vars = params[5])
+
 ```
 
 ```{r}
