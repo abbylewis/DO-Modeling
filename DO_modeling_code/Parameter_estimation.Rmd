@@ -74,26 +74,51 @@ temp_slope = 0.03937878
 ```{r}
 param_est_fun <- function(parms){
   print(parms)
-  results_year <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  year = 2013
+  start = start_all[year(start_all)==year]
+  stop = stop_all[year(stop_all)==year]
+  results_2013 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
   #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
-  rmse_year <- createRmseDF(n_days, results_year) # Calculate rmse for all days
-  return(mean(rmse_year$val, na.rm = T))
+  rmse_2013 <- createRmseDF(n_days, results_2013, cali = run_space/14) # Calculate rmse for all days
+  
+  year = 2014
+  start = start_all[year(start_all)==year]
+  stop = stop_all[year(stop_all)==year]
+  results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+  rmse_2014 <- createRmseDF(n_days, results_2014, cali = run_space/14) # Calculate rmse for all days
+  
+  year = 2015
+  start = start_all[year(start_all)==year]
+  stop = stop_all[year(stop_all)==year]
+  results_2015 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+  rmse_2015 <- createRmseDF(n_days, results_2015, cali = run_space/14) # Calculate rmse for all days
+  
+  year = 2016
+  start = start_all[year(start_all)==year]
+  stop = stop_all[year(stop_all)==year]
+  results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
+  rmse_2016 <- createRmseDF(n_days, results_2016, cali = run_space/14) # Calculate rmse for all days
+  
+  rmses = c(rmse_2013$val, rmse_2014$val, rmse_2015$val, rmse_2016$val)
+  rmse_final = mean(rmses, na.rm = T)
+  print(rmse_final)
+  return(rmse_final)
 }
 ```
 
 ```{r}
 #Specifications
-  run_space <- 1 #Number of days between runs of the model
+  run_space <- 7 #Number of days between runs of the model
   n_days <- 14 #Forecast horizon
   model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
   gif = F
   uncert = "all" #Options = "all","init","driver","param","proc"
   date <- format(Sys.Date(),"%d%b%y")
   archiveForecasts = F
-  year = 2013
   
-  start = start_all[year(start_all)==year]
-  stop = stop_all[year(stop_all)==year]
 
 #R20 <- makeNumericParam(
 #  "R20",
@@ -123,7 +148,7 @@ param_est_fun <- function(parms){
 #)
 
 par.set = makeNumericParamSet(len = 4L, id = "parms",
-                              lower = c(.5,1.04,.1,2), upper = c(1,1.3,.7,4),vector = TRUE)
+                              lower = c(.5,1.02,.1,2), upper = c(1,1.2,.7,4),vector = TRUE) 
 
 objective.fun = makeSingleObjectiveFunction(name = paste(year), 
                                            id = NULL,

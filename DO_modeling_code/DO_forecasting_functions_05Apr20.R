@@ -114,7 +114,7 @@ inputs_year<- function(start, stop, CTD, SSS){
 #' @param uncert type of uncertainty ("all", "driver","param","init","proc")
 #' @return enKF results
 #' 
-run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all", parms){
+run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "normal", uncert = "all", parms, start, stop){
   obs = obs%>%
     filter(datetime<=today)
   #print(obs[1,2])
@@ -384,7 +384,7 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   while(today < stop){
     row<- as.numeric(difftime(today,start))/run_space+1
     cols <- n_days*2+1
-    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert, parms = parms)
+    est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert, parms = parms, start = start, stop = stop)
     mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
     mean_o2_est_short <- mean_o2_est[(row+1):min(length(mean_o2_est),(row+n_days))]
     var_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = var)
@@ -428,10 +428,11 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
   saved_ko2 <-   as.data.frame(est_thisYear$Y[4,,], col.names = seq(1,n_en))
   saved_sss <-   as.data.frame(est_thisYear$Y[5,,], col.names = seq(1,n_en))
   if(uncert == "all"){
+    collumn_names = colnames(saved_R20 %>% mutate(Var = "R20",Date = row.names(saved_R20)))
     saved_params <- saved_R20 %>% mutate(Var = "R20",Date = row.names(saved_R20)) %>%
-      full_join(saved_theta   %>% mutate(Var = "theta",Date = row.names(saved_R20)))%>%
-      full_join(saved_ko2     %>% mutate(Var = "ko2",Date = row.names(saved_R20)))%>%
-      full_join(saved_sss     %>% mutate(Var = "sss",Date = row.names(saved_R20)))%>%
+      full_join(saved_theta   %>% mutate(Var = "theta",Date = row.names(saved_R20)), by = collumn_names)%>%
+      full_join(saved_ko2     %>% mutate(Var = "ko2",Date = row.names(saved_R20)), by = collumn_names)%>%
+      full_join(saved_sss     %>% mutate(Var = "sss",Date = row.names(saved_R20)), by = collumn_names)%>%
       pivot_longer(1:100, "Sim")
     date <- format(Sys.Date(),"%d%b%y")
     dir.create(paste("../DO_modeling_results/",date,sep = ""))

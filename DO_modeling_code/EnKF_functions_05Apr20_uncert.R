@@ -284,7 +284,7 @@ EnKF = function(n_en = 100,
   drivers_df = driver_file
   
   #yini
-  o2_init = obs_df$O2_mgL[min(which(!is.na(obs_df$O2_mgL)))]
+  o2_init = obs_df$O2_mgL[min(which(!is.na(obs_df$O2_mgL) & obs_df$datetime>=start & obs_df$datetime<=stop))]
   
   state_cv = obs_cv #coefficient of variation of O2 observations
   state_sd = state_cv * o2_init #because cv = sd/mean

@@ -161,11 +161,13 @@ temp_slope = 0.03937878
 
 Testing: keep only training years!
 ```{r}
+parms = c(0.6876771, 1.0200000, 0.7000000, 2.0581910)
+
 #2013
 start = start_all[year(start_all)==2013]
 stop = stop_all[year(stop_all)==2013]
 inputs_2013 <- inputs_year(start,stop,CTD,SSS)
-test_2013 <- run_do_hindcast(inputs_2013,obs, stop, parms = parms)
+test_2013 <- run_do_hindcast(inputs_2013,obs, stop, parms = parms, start=start, stop=stop)
 plot_o2(test_2013,stop,start,stop)
 plot(inputs_2013$Date,inputs_2013$Chla)
 lm1 <- lm(inputs_2013$Temp~inputs_2013$Date)
@@ -176,7 +178,7 @@ lm1 <- lm(inputs_2013$Temp~inputs_2013$Date)
 start = start_all[year(start_all)==2014]
 stop = stop_all[year(stop_all)==2014]
 inputs_2014 <- inputs_year(start,stop,CTD,SSS)
-test_2014 <- run_do_hindcast(inputs_2014,obs,stop, parms = parms)
+test_2014 <- run_do_hindcast(inputs_2014,obs,stop, parms = parms, start=start, stop=stop)
 plot_o2(test_2014,stop,start,stop)
 lm2 <- lm(inputs_2014$Temp~inputs_2014$Date)
 #plot(inputs_2014$Date,inputs_2014$Temp)
@@ -187,7 +189,7 @@ lm2 <- lm(inputs_2014$Temp~inputs_2014$Date)
 start = start_all[year(start_all)==2015]
 stop = stop_all[year(stop_all)==2015]
 inputs_2015 <- inputs_year(start,stop,CTD,SSS)
-test_2015 <- run_do_hindcast(inputs_2015,obs,stop, parms = parms)
+test_2015 <- run_do_hindcast(inputs_2015,obs,stop, parms = parms, start=start, stop=stop)
 plot_o2(test_2015,stop,start,stop)
 #plot_hindcast(test_2015)
 plot(inputs_2015$Date,inputs_2015$scfm)
@@ -197,7 +199,7 @@ lm3 <- lm(inputs_2015$Temp~inputs_2015$Date)
 start = start_all[year(start_all)==2016]
 stop = stop_all[year(stop_all)==2016]
 inputs_2016 <- inputs_year(start,stop,CTD,SSS)
-test_2016 <- run_do_hindcast(inputs_2016,obs,stop, parms = parms)
+test_2016 <- run_do_hindcast(inputs_2016,obs,stop, parms = parms, start=start, stop=stop)
 plot_o2(test_2016,stop,start,stop)
 #plot_hindcast(test_2016)
 plot(inputs_2016$Date,inputs_2016$Temp)
@@ -207,7 +209,7 @@ lm4 <- lm(inputs_2016$Temp~inputs_2016$Date)
 start = start_all[year(start_all)==2017]
 stop = stop_all[year(stop_all)==2017]
 inputs_2017 <- inputs_year(start,stop,CTD,SSS)
-test_2017 <- run_do_hindcast(inputs_2017,obs,stop, parms = parms)
+test_2017 <- run_do_hindcast(inputs_2017,obs,stop, parms = parms, start=start, stop=stop)
 plot_o2(test_2017,stop,start,stop)
 #plot_hindcast(test_2017)
 #plot(inputs_2017$Date,inputs_2017$Temp)
