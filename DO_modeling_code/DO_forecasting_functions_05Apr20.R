@@ -33,7 +33,7 @@ calc_avg <- function(start,stop,CTD,SSS){
   dates_init <- tibble(start,stop)
   dates <- dates_init %>%
     mutate(year = year(start))%>%
-    select(year,start,stop)
+    dplyr::select(year,start,stop)
   
   allDays<-tibble(seq(min(start),max(stop),by = "days"))
   colnames(allDays) <- "Date"
@@ -57,7 +57,7 @@ calc_avg <- function(start,stop,CTD,SSS){
     left_join(dates)%>%
     filter(Date>=start,
            Date<=stop)%>%
-    select(-start,-stop,-year)
+    dplyr::select(-start,-stop,-year)
   
   toCalcAvg <- inputs_inRange%>%
     fill(Conc,Temp,hypoVolume,thermo_depth,Chla,SA)
@@ -281,6 +281,8 @@ createResultsDF <- function(start, stop){
 
 
 
+
+
 #' Function to add all dates to the observation file (unsampled dates should be NA)
 #' 
 #' @param start start date for the summer
@@ -320,6 +322,31 @@ createRmseDF <- function(n_days,results, cali = 14){
   rmse_thisYear
 }
 
+#' Function to calculate one rmse value, leaving out the first 14 days
+#' 
+#' @param n_days forecast horizon
+#' @param results results from enkf
+#' @param cali calibration period
+#' @return RMSE dataframe
+#' 
+calcRmseTotal <- function(n_days,results, cali = 14){
+  #n <- seq(1,n_days)
+  #val <- rep(NA,n_days)
+  #class(val) <- "numeric"
+  #rmse_thisYear <- data.frame(n,val)
+  results <- tail(results, n = -cali)
+  results <- as.data.frame(results)
+  predicted = c()
+  observed = c()
+  for(i in seq(1:n_days)){
+    predicted <- c(predicted, results[i+1])
+    observed <- c(observed, results[i+1+n_days])
+  }
+  predicted = unlist(predicted)
+  observed = unlist(observed)
+  rmse(observed[!is.na(observed)], predicted[!is.na(observed)])
+}
+
 
 #' Take a results file and calculate RMSE for each forecast horizon starting from an observation
 #' 
@@ -328,11 +355,11 @@ createRmseDF <- function(n_days,results, cali = 14){
 #' @param obs
 #' @reutrn data.frame with RMSE for each forecast horizon this year
 #' 
-createRmseDF_filt <- function(n_days, results, obs){
+createRmseDF_filt <- function(n_days, results, obs, cali = 14){
   results <- as.data.frame(results)
   obs_dates <- as.numeric(obs$datetime)
   results_filtered <- results[results$TODAY %in% obs_dates,]
-  rmse_filt <- createRmseDF(n_days, results_filtered)
+  rmse_filt <- createRmseDF(n_days, results_filtered, cali)
   return(rmse_filt)
 }
 
@@ -386,9 +413,9 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
     cols <- n_days*2+1
     est_thisYear <- run_do_hindcast(inputs_thisYear, obs, today, n_days, model_name = model_name,uncert = uncert, parms = parms, start = start, stop = stop)
     mean_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = mean)
-    mean_o2_est_short <- mean_o2_est[(row+1):min(length(mean_o2_est),(row+n_days))]
+    mean_o2_est_short <- mean_o2_est[(run_space*(row-1)+2):min(length(mean_o2_est),(run_space*(row-1)+1+n_days))]
     var_o2_est <- apply(est_thisYear$Y[1,,], 1, FUN = var)
-    var_o2_est_short = var_o2_est[(row+1):min(length(var_o2_est),(row+n_days))]
+    var_o2_est_short = var_o2_est[(run_space*(row-1)+2):min(length(var_o2_est),(run_space*(row-1)+1+n_days))]
     obs_toAdd <- obs_allDates$O2_mgL[obs_allDates$datetime>today & obs_allDates$datetime<=today+n_days]
     if(length(obs_toAdd)<n_days){
       obs_toAdd<-c(obs_toAdd, rep(NA,n_days-length(obs_toAdd)))

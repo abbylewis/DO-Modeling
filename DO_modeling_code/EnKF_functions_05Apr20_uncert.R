@@ -89,7 +89,7 @@ get_obs_matrix = function(obs_df, model_dates, n_step, n_states){
   obs_df_filtered = obs_df %>%
     dplyr::filter(as.Date(datetime) %in% as.Date(model_dates)) %>%
     mutate(date = as.Date(datetime)) %>%
-    select(date, O2_mgL) %>%
+    dplyr::select(date, O2_mgL) %>%
     mutate(date_step = which(model_dates %in% date))
 
   obs_matrix = array(NA, dim = c(n_states, 1, n_step))
