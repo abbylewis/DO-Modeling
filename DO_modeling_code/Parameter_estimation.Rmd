@@ -146,8 +146,6 @@ param_est_fun <- function(parms){
 #  upper = 4,
 #  default = 3
 #)
-
-  
 par.set = makeNumericParamSet(len = 4L, id = "parms",
                               lower = c(0,1.06,.4,1.5), upper = c(2,1.09,1.7,4.5),vector = TRUE) #Oxygen wants the final three parameters to be higher. Temp wants the first one to be lower (which is silly because changing ko2 has the same effect)
 
