@@ -64,11 +64,21 @@ Make file
 ens = seq(1,100)
 forecasts_all <- data.frame(ens)
 for(year in seq(2013,2019,by=1)){
-  files = list.files(paste0("../Archived_forecasts/17Jun20/",year))
+  files = list.files(paste0("../Archived_forecasts/14Jul20/",year))
   for(file in files){
-    forecast = read.csv(paste0("../Archived_forecasts/17Jun20/",year,"/",file))
+    forecast = read.csv(paste0("../Archived_forecasts/14Jul20/",year,"/",file))
     date = gsub(".csv","",file)
     forecasts_all[date]<-sort(t(forecast[nrow(forecast),2:101]))
+  }
+}
+
+forecasts_all_7 <- data.frame(ens)
+for(year in seq(2013,2019,by=1)){
+  files = list.files(paste0("../Archived_forecasts/14Jul20/",year))
+  for(file in files){
+    forecast = read.csv(paste0("../Archived_forecasts/14Jul20/",year,"/",file))
+    date = gsub(".csv","",file)
+    forecasts_all_7[date]<-sort(t(forecast[nrow(forecast)-7,2:101]))
   }
 }
 
@@ -78,18 +88,29 @@ Plot forecasts, temperature, and oxygen
 ```{r}
 forecasts_toPlot = as.data.frame(t(forecasts_all), row.names = seq(1,ncol(forecasts_all)-1))[-1,]
 forecasts_toPlot$Date = row.names(t(forecasts_all)[-1,])
+#forecasts_toPlot = as.data.frame(t(forecasts_all_7), row.names = seq(1,ncol(forecasts_all)-1))[-1,]
+#forecasts_toPlot$Date = row.names(t(forecasts_all_7)[-1,]) #If you want to do 7 day forecasts you also need to change the offest for observations two rows down
 forecast_graph <- forecasts_toPlot%>%
   mutate(Date = as.Date(Date,format = "%d%b%y")+14,
          Year = year(Date))%>%
   filter(year(Date)!=2017)%>%
   pivot_longer(1:100,"ens")%>%
-  ggplot(aes(x = Date, y = value))+
-  geom_line(lwd = 0.1, aes(group = ens, lty = "model"))+
-  geom_point(data = obs2%>%mutate(Year = year(datetime))%>%filter(year(datetime)!=2017), aes(x = datetime, y = O2_mgL,shape = "obs"), color = "red")+
+  group_by(Date, Year)%>%
+  summarize(max = max(value),
+            min = min(value),
+            mean = mean(value),
+            sd_up = mean(value)+sd(value),
+            sd_down = mean(value)-sd(value))%>%
+  ggplot(aes(x = Date))+
+  geom_ribbon(aes(ymax = max, ymin = min, fill = "model"))+
+  geom_line(aes(y = mean, col = "model"), size = .5)+
+  scale_color_manual(labels = "model", name = "",values = c("blue"))+
+  scale_fill_manual(labels = "model", name = "",values = c("grey20"))+
+  geom_point(data = obs2%>%mutate(Year = year(datetime))%>%filter(year(datetime)!=2017), aes(x = datetime, y = O2_mgL,shape = "obs"), color = "deeppink")+
   facet_grid(~Year, scales = "free_x", space = "free_x")+
   xlab("")+
   ylab("Hypo. DO (mg/L)")+
-  #theme_light()+
+  theme_bw()+
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         plot.margin = unit(c(5.5,5.5,-5.5,5.5), units = "pt"),
@@ -98,7 +119,8 @@ forecast_graph <- forecasts_toPlot%>%
         legend.title = element_blank(),
         legend.spacing.y = unit(0,units = "pt"),
         legend.background = element_blank(),
-        legend.box.background = element_rect(color = "black",fill = "white",linetype = "solid"))### Issue here: the lines really shouldn't connect bc ens 1 from one run != ens 1 from the next run
+        legend.box.background = element_rect(color = "black",fill = "white",linetype = "solid"))
+forecast_graph
 
 temp <- obs2%>%
   filter(year(datetime)!=2017)%>%
@@ -107,6 +129,7 @@ temp <- obs2%>%
   facet_grid(~year(datetime), scales = "free_x", space = "free_x")+
   xlab("")+
   ylab("Temp. (ºC)")+
+  theme_bw()+
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         plot.margin = unit(c(0,5.5,-5.5,5.5), units = "pt"),
@@ -119,24 +142,25 @@ o2 <- SSS2%>%
   ggplot(aes(x = time, y = Conc_added))+
   geom_line()+
   facet_grid(~year(time), scales = "free_x", space = "free_x")+
+  theme_bw()+
   theme(strip.background = element_blank(),
         strip.text.x = element_blank(),
         plot.margin = unit(c(0,5.5,5.5,5.5), units = "pt"),
         axis.title.x = element_blank())+
   ylab("O2 added (mg/L/d)")
 
-jpeg("../DO_modeling_figures/14 day forecast with drivers.jpg", width = 12, height = 6, units = "in", res = 300)
-grid.arrange(forecast_graph,temp,o2, heights = c(2,1,1))
+jpeg("../DO_modeling_figures/7 day forecast with drivers.jpg", width = 12, height = 6, units = "in", res = 300)
+grid.arrange(forecast_graph,temp,o2, heights = c(2,.5,1))
 #grid_arrange_shared_legend(forecast_graph,temp,o2, nrow = 3, ncol = 1,heights = c(2,1,1))
 dev.off()
 ```
 
 Forecast evaluation plots
 ```{r}
-temp <- read.csv("../DO_modeling_results/rmse_temp_17Jun20.csv")
-o2 <- read.csv("../DO_modeling_results/rmse_o2_17Jun20.csv")
-full <- read.csv("../DO_modeling_results/rmse_full_17Jun20.csv")
-persist <- read.csv("../DO_modeling_results/rmse_persist_18Jun20.csv")
+temp <- read.csv("../DO_modeling_results/rmse_temp_14Jul20.csv")
+o2 <- read.csv("../DO_modeling_results/rmse_o2_14Jul20.csv")
+full <- read.csv("../DO_modeling_results/rmse_full_14Jul20.csv")
+persist <- read.csv("../DO_modeling_results/rmse_persist_14Jul20.csv")
 
 rmse_all <- persist%>%
   mutate(Model = "persistance")%>%
@@ -176,17 +200,17 @@ rmse_temp_o2 <- rmse_all %>%
 #Bias figure and crps
 
 #Just to get column names
-all_model <- read.csv(paste("../DO_modeling_results/17Jun20/forecast_2013_full_model_all_uncert.csv",sep = ""))
+all_model <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_2013_full_model_all_uncert.csv",sep = ""))
 
 #Run through all saved forecasts
 for(year in seq(2013,2019)){
-  full <- read.csv(paste("../DO_modeling_results/17Jun20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
+  full <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
     mutate(model = "full",
            year = year)
-  o2 <- read.csv(paste("../DO_modeling_results/17Jun20/forecast_",year,"_o2_model_all_uncert.csv",sep = ""))%>%
+  o2 <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_",year,"_o2_model_all_uncert.csv",sep = ""))%>%
     mutate(model = "o2",
            year = year)
-  temp <- read.csv(paste("../DO_modeling_results/17Jun20/forecast_",year,"_temp_model_all_uncert.csv",sep = ""))%>%
+  temp <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_",year,"_temp_model_all_uncert.csv",sep = ""))%>%
     mutate(model = "temp",
            year = year)
   all_model = all_model%>%
@@ -290,28 +314,28 @@ dev.off()
 ```{r}
 source('DO_forecasting_functions_05Apr20.R')
 #Just to get column names
-all <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_2013_full_model_all_uncert.csv",sep = ""))
+all <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_2013_full_model_all_uncert.csv",sep = ""))
 SDs = all[FALSE,seq(31,44)] #This says SD but it is actually var throughout
 
 #Run through all saved forecasts
 for(year in seq(2013,2019)){
-  full <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
+  full <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
     mutate(uncert = "all",
            year = year)
   full_var <- sd_sum(full,"all",year)
-  param <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_param_uncert.csv",sep = ""))%>%
+  param <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_",year,"_full_model_param_uncert.csv",sep = ""))%>%
     mutate(uncert = "param",
            year = year)
   param_var <- sd_sum(param,"param",year)
-  driver <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_driver_uncert.csv",sep = ""))%>%
+  driver <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_",year,"_full_model_driver_uncert.csv",sep = ""))%>%
     mutate(uncert = "driver",
            year = year)
   driver_var <- sd_sum(driver,"driver",year)
-  init <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_init_uncert.csv",sep = ""))%>%
+  init <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_",year,"_full_model_init_uncert.csv",sep = ""))%>%
     mutate(uncert = "init",
            year = year)
   init_var <- sd_sum(init,"init",year)
-  proc <- read.csv(paste("../DO_modeling_results/15Apr20/forecast_",year,"_full_model_proc_uncert.csv",sep = ""))%>%
+  proc <- read.csv(paste("../DO_modeling_results/14Jul20/forecast_",year,"_full_model_proc_uncert.csv",sep = ""))%>%
     mutate(uncert = "proc",
            year = year)
   proc_var <- sd_sum(proc,"proc",year)
@@ -325,9 +349,9 @@ for(year in seq(2013,2019)){
 
 
 SDs_final = SDs%>%
-  gather(day,var,1:14)%>%
+  pivot_longer(names_to = "day",values_to = "var",1:14)%>%
   mutate(day_n = as.numeric(gsub("_var",gsub("PLUS",day,replacement = ""),replacement = "")))%>%
-  select(-day)
+  dplyr::select(-day)
 
 png("../DO_modeling_figures/uncert_horiz.png",width = 6, height = 3, units = "in", res = 300)
 SDs_final%>%

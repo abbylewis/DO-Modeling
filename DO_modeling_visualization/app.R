@@ -9,12 +9,13 @@ stop = as.Date(start_stop$stop_all)
 year<-2019
 
 # Define UI
-ui <- fluidPage(theme = shinytheme("lumen"),
+ui <- fluidPage(tags$head(includeHTML("google-analytics.html")),
+                theme = shinytheme("lumen"),
                 titlePanel(h1("Dissolved Oxygen Forecast",align = "center")),
                 title = "DO forecast",
                 sidebarPanel(
                   selectInput(inputId = "model", label = strong("Model Type"),
-                              choices = c("SSS only" ="_sss","All" = "_all","Oxygen only" = "_o2","Temperature only" = "_temp"),
+                              choices = c("All" = "_all","Oxygen only" = "_o2","Temperature only" = "_temp"),
                               selected = "_all"),
                   selectInput(inputId = "year", label = strong("Forecast Year"),
                               choices = c("2019","2018","2017","2016","2015","2014","2013"),
@@ -66,9 +67,9 @@ server <- function(input, output, session) {
     start_thisYear = as.Date(start_stop$start_all[year(start_stop$start_all) == year])
     date_num = formatC(as.numeric(difftime(date,start_thisYear))+1, width = 3, format = "d", flag = "0")
     if(model == "_all"){model <- ""}
-    filename <- paste('06May20/',year,model,'/forecast', date_num, '.png', sep='')
+    filename <- paste('02Aug20/',year,model,'/forecast', date_num, '.png', sep='')
     if(input$gif == T){
-      filename <- paste('06May20/',year,model,'/animated_forecast.gif',sep="")
+      filename <- paste('02Aug20/',year,model,'/animated_forecast.gif',sep="")
     }
     # Return a list containing the filename and alt text
     list(src = filename,
@@ -78,12 +79,12 @@ server <- function(input, output, session) {
   
   
   output$forecast_date <- renderText({
-    paste("Forecast generated on 06 May 2020")
+    paste("Forecast generated on 02 August 2020")
   })
   
   
   output$rmse <- renderImage({
-    filename <- "./06May20/RMSE_all.jpeg"
+    filename <- "./02Aug20/RMSE_all.jpg"
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height = height,
@@ -92,7 +93,7 @@ server <- function(input, output, session) {
   
   
   output$uncert_all <- renderImage({
-    filename <- "./06May20/uncert_horiz.png"
+    filename <- "./02Aug20/uncert_horiz.png"
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height=height,
@@ -101,7 +102,7 @@ server <- function(input, output, session) {
   
   
   output$uncert_year <- renderImage({
-    filename <- "./06May20/uncert_season7.png"
+    filename <- "./02Aug20/uncert_season7.png"
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height=height,
@@ -109,7 +110,7 @@ server <- function(input, output, session) {
   }, deleteFile = F)
   
   output$crps7 <- renderImage({
-    filename <- "./06May20/crps_season7.png"
+    filename <- "./02Aug20/crps_season7.png"
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height=height,
@@ -117,7 +118,7 @@ server <- function(input, output, session) {
   }, deleteFile = F)
   
   output$crps_horiz <- renderImage({
-    filename <- "./06May20/crps_horiz.png"
+    filename <- "./02Aug20/crps_horiz.png"
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height=height,
@@ -125,7 +126,7 @@ server <- function(input, output, session) {
   }, deleteFile = F)
   
   output$bias <- renderImage({
-    filename <- "./06May20/bias_horizon.png"
+    filename <- "./02Aug20/bias_horizon.png"
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height=height,
@@ -135,7 +136,7 @@ server <- function(input, output, session) {
   output$param <- renderImage({
     model <- input$model
     if(model == "_all"){model <- ""}
-    filename <- paste('06May20/',input$year,model,'/params.jpeg', sep='')
+    filename <- paste('02Aug20/',input$year,model,'/params.jpeg', sep='')
     height <- session$clientData$output_preImage_height
     list(src = filename,
          height=height,
@@ -143,7 +144,7 @@ server <- function(input, output, session) {
   }, deleteFile = F)
   
   output$forecast_date <- renderText({
-    paste("Forecast generated on 06 May 2020")
+    paste("Forecast generated on 02 Aug 2020")
   })
   
   

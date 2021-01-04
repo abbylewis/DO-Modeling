@@ -1,0 +1,859 @@
+---
+title: "Paper Figures"
+author: "Abby Lewis"
+date: "6/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(readxl)
+library(gridExtra)
+library(grid)
+library(lemon)
+library(verification)
+library(Metrics)
+source('DO_forecasting_functions_05Apr20.R')
+
+abby_palette <- c("#355a61", "#e1b447", "#d246a3", "#079fbf","#7100c1","#0005b2")
+palette_2 <-c("#355a61", "#A682FF", "#4C061D","#D17A22","#C5FFFD")
+palette_3 <-c("#1B065E","#FF87AB","#B9D2DD","#676F54","#FCC8C2")
+palette_4 <- c("#DA2C38","#028090","#571F4E","#B9D2DD","#F9B5AC")
+palette_5 <- c("#006d77ff","#83c5beff", "#ffddd2ff", "#e29578ff", "#922d50ff", "#533b4dff")
+palette_6 <- c("#006d77ff", "#83c5beff", "#e29578ff", "#922d50ff", "#542966", "#100E1A")
+```
+
+```{r}
+start_stop <- read.csv("../DO_modeling_data/start_stop.csv") #load start and end dates for the stratified period of each summer
+start = as.Date(start_stop$start_all) #format as date
+stop = as.Date(start_stop$stop_all)
+
+#Create observations dataframe
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+CTD = CTD%>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date))
+obs <- CTD %>%
+  filter(!is.na(Conc))%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(O2_mgL = mean(Conc),
+            Temp_C = mean(Temp))
+obs2<-obs%>%
+  group_by(datetime)%>%
+  filter(datetime>=start[year(start) == year(datetime)]+14,
+         datetime<=stop[year(stop) == year(datetime)])
+
+
+mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
+median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
+
+#Create driver data frame (called model_inputs)
+SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+SSS$time <- as.Date(SSS$time)
+SSS2 <- SSS%>%
+  group_by(time)%>%
+  filter(time>=start[year(start) == year(time)]+14,
+         time<=stop[year(stop) == year(time)]+14)
+  
+#start_all = as.Date(c("2013-05-30","2014-06-02","2015-05-28","2016-06-01","2017-06-28","2018-06-04","2019-06-03"))
+#stop_all = as.Date(c("2013-09-25","2014-10-04","2015-09-28","2016-09-30","2017-07-12","2018-10-22","2019-10-30"))
+#write.csv(data.frame(start_all,stop_all),"../DO_modeling_data/start_stop.csv")
+start_stop <- read.csv("../DO_modeling_data/start_stop.csv")
+start_all = as.Date(start_stop$start_all)
+stop_all = as.Date(start_stop$stop_all)
+avg_hypoVolume<-22665926
+CTD$hypoVolume<-avg_hypoVolume
+```
+
+Make file
+```{r}
+ens = seq(1,100)
+forecasts_all <- data.frame(ens)
+for(year in seq(2013,2019,by=1)){
+  files = list.files(paste0("../Archived_forecasts/15Sep20/",year))
+  for(file in files){
+    forecast = read.csv(paste0("../Archived_forecasts/15Sep20/",year,"/",file))
+    date = gsub(".csv","",file)
+    forecasts_all[date]<-sort(t(forecast[nrow(forecast),2:101]))
+  }
+}
+
+ens = seq(1,100)
+temps_all <- data.frame(ens)
+for(year in seq(2013,2019,by=1)){
+  files = list.files(paste0("../Archived_temps/06Nov20/",year))
+  for(file in files){
+    forecast = read.csv(paste0("../Archived_temps/06Nov20/",year,"/",file))
+    date = gsub(".csv","",file)
+    temps_all[date]<-sort(t(forecast[nrow(forecast),2:101]))
+  }
+}
+
+#forecasts_all_7 <- data.frame(ens)
+#for(year in seq(2013,2019,by=1)){
+#  files = list.files(paste0("../Archived_forecasts/15Sep20/",year))
+#  for(file in files){
+#    forecast = read.csv(paste0("../Archived_forecasts/15Sep20/",year,"/",file))
+#    date = gsub(".csv","",file)
+#    forecasts_all_7[date]<-sort(t(forecast[nrow(forecast)-7,2:101]))
+#  }
+#}
+
+```
+
+Plot forecasts, temperature, and oxygen
+```{r}
+forecasts_toPlot = as.data.frame(t(forecasts_all), row.names = seq(1,ncol(forecasts_all)-1))[-1,]
+forecasts_toPlot$Date = row.names(t(forecasts_all)[-1,])
+#forecasts_toPlot = as.data.frame(t(forecasts_all_7), row.names = seq(1,ncol(forecasts_all)-1))[-1,]
+#forecasts_toPlot$Date = row.names(t(forecasts_all_7)[-1,]) #If you want to do 7 day forecasts you also need to change the offest for observations two rows down
+forecast_graph_df <- forecasts_toPlot%>%
+  mutate(Date = as.Date(Date,format = "%d%b%y")+14,
+         Year = year(Date))%>%
+  filter(year(Date)!=2017)%>%
+  pivot_longer(1:100,"ens")%>%
+  group_by(Date, Year)%>%
+  summarize(max = max(value),
+            min = min(value),
+            mean = mean(value),
+            sd_up = mean(value)+sd(value),
+            sd_down = mean(value)-sd(value))
+
+
+temps_toPlot = as.data.frame(t(temps_all), row.names = seq(1,ncol(temps_all)-1))[-1,]
+temps_toPlot$Date = row.names(t(temps_all)[-1,])
+#forecasts_toPlot = as.data.frame(t(forecasts_all_7), row.names = seq(1,ncol(forecasts_all)-1))[-1,]
+#forecasts_toPlot$Date = row.names(t(forecasts_all_7)[-1,]) #If you want to do 7 day forecasts you also need to change the offest for observations two rows down
+temp_graph_df <- temps_toPlot%>%
+  mutate(datetime = as.Date(Date,format = "%d%b%y")+14,
+         Year = year(datetime))%>%
+  filter(year(datetime)!=2017)%>%
+  pivot_longer(1:100,"ens")%>%
+  group_by(datetime, Year)%>%
+  summarize(max = max(value),
+            min = min(value),
+            mean = mean(value),
+            sd_up = mean(value)+sd(value),
+            sd_down = mean(value)-sd(value))
+  
+persist = obs2%>%
+  ungroup%>%
+  mutate(
+    datetime = datetime + 14,
+    Year = year(datetime),
+    xend = lead(datetime),
+    yend = O2_mgL)%>%
+  filter(year(datetime)!=2017,
+         year(datetime)==year(xend))
+
+forecast_graph = forecast_graph_df%>%
+  ggplot(aes(x = Date))+
+  geom_ribbon(aes(ymax = max, ymin = min, fill = "model"))+
+  geom_line(aes(y = mean, col = "model"), size = .7)+
+  scale_color_manual(labels = "model", name = "",values = c("#355A61"))+
+  scale_fill_manual(labels = "model", name = "",values = c("#B9D2DD"))+
+  geom_point(data = obs2%>%mutate(Year = year(datetime))%>%filter(year(datetime)!=2017), aes(x = datetime, y = O2_mgL,shape = "obs"), color = "black")+
+  #geom_segment(data = persist, aes(x = datetime, y = O2_mgL, xend = xend, yend = yend), color = "red", size = 1.5)+
+  facet_grid(~Year, scales = "free_x", space = "free_x")+
+  xlab("")+
+  ylab(expression(atop("Hypolimnetic DO",
+                       "(mg "~ L^-1~")")))+
+  theme_bw()+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        plot.margin = unit(c(5.5,10,-5.5,15), units = "pt"),
+        legend.position = c(0.99,0.95),
+        legend.justification = c(1,1),
+        legend.title = element_blank(),
+        legend.spacing.y = unit(0,units = "pt"),
+        legend.background = element_blank(),
+        legend.box.background = element_rect(color = "black",fill = "white",linetype = "solid"),
+        text = element_text(size=18))
+
+jpeg("../DO_modeling_figures/forecast_only.jpg", width = 8, height = 6, units = "in", res = 300)
+forecast_graph+
+  facet_wrap(~Year, scales = "free_x")+
+  ylab(expression("Bottom-water oxygen (mg/L)"))
+dev.off()
+
+obs2$max = obs2$datetime+14
+
+temp <- obs2%>%
+  filter(year(datetime)!=2017)%>%
+  ggplot(aes(x = datetime))+
+  geom_ribbon(data = temp_graph_df, aes(x = datetime, ymax = max, ymin = min), fill = "#E6B897")+
+  geom_line(data = temp_graph_df, aes(x = datetime, y = mean), color = "#764B3D",size = .7)+
+  geom_point(aes(y = Temp_C))+
+  facet_grid(~year(datetime), scales = "free_x", space = "free_x")+
+  xlab("")+
+  ylab(expression(atop("Temp.",
+                       "(ºC)")))+
+  geom_blank(aes(x = max)) +
+  theme_bw()+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        plot.margin = unit(c(-5.5,10,-5.5,15), units = "pt"),
+        strip.background = element_blank(),
+        strip.text.x = element_blank(),
+        text = element_text(size=18))
+
+o2 <- SSS2%>%
+  filter(year(time)!=2017)%>%
+  mutate(Conc_added = scfm*50*1000000/22665926)%>%
+  ggplot(aes(x = time, y = Conc_added))+
+  geom_line()+
+  facet_grid(~year(time), scales = "free_x", space = "free_x")+
+  theme_bw()+
+  theme(strip.background = element_blank(),
+        strip.text.x = element_blank(),
+        plot.margin = unit(c(-5.5,10,5.5,15), units = "pt"),
+        axis.title.x = element_blank(),
+        text = element_text(size=18))+
+  ylab(expression(atop(O[2]~"added",
+                       "(mg "~L^-1 ~ d^-1~")")))
+
+g_for <- ggplotGrob(forecast_graph)
+g_temp <- ggplotGrob(temp)
+g_o2 <- ggplotGrob(o2)
+
+g_temp$widths = g_for$widths
+g_o2$widths = g_for$widths
+
+jpeg("../DO_modeling_figures/14 day forecast with drivers.jpg", width = 12, height = 6, units = "in", res = 300)
+#grid.arrange(forecast_graph,temp,o2, heights = c(2,.5,1))
+grid.arrange(g_for,g_temp,g_o2, heights = c(2,.5,1))
+#grid_arrange_shared_legend(forecast_graph,temp,o2, nrow = 3, ncol = 1,heights = c(2,1,1))
+dev.off()
+```
+
+Forecast evaluation plots
+```{r}
+date = "15Sep20"
+
+temp <- read.csv(paste0("../DO_modeling_results/rmse_temp_",date,".csv"))
+o2 <- read.csv(paste0("../DO_modeling_results/rmse_o2_",date,".csv"))
+full <- read.csv(paste0("../DO_modeling_results/rmse_full_",date,".csv"))
+persist <- read.csv(paste0("../DO_modeling_results/rmse_persist",date,".csv"))
+
+
+temp_filt <- read.csv(paste0("../DO_modeling_results/rmse_filt_temp_",date,".csv"))
+o2_filt <- read.csv(paste0("../DO_modeling_results/rmse_filt_o2_",date,".csv"))
+full_filt <- read.csv(paste0("../DO_modeling_results/rmse_filt_full_",date,".csv"))
+persist_filt <- read.csv(paste0("../DO_modeling_results/rmse_filt_persist_",date,".csv"))
+
+rmse_all_filt <- temp_filt%>%
+  mutate(Model = "temp")%>%
+  full_join(full_filt %>% mutate(Model = "full"))%>%
+  full_join(o2_filt %>% mutate(Model = "o2"))
+
+rmse_all <- full %>% mutate(Model = "full")%>%
+  full_join(o2 %>% mutate(Model = "o2"))%>%
+  full_join(temp %>% mutate(Model = "temp"))
+
+rmse_all <- persist%>%
+  mutate(Model = "persistance")%>%
+  full_join(full %>% mutate(Model = "full"))%>%
+  full_join(o2 %>% mutate(Model = "o2"))%>%
+  full_join(temp %>% mutate(Model = "temp"))
+
+rmse <- rmse_all %>%
+  filter(Year!=2017, 
+         Model %in% c("full","persistance"))%>%
+  ggplot(aes(x = n, y = val, lty = Model, color = as.factor(Year)))+
+  geom_line()+
+  ylab(expression(paste("RMSE (mg ",L^-1," )")))+
+  scale_linetype_discrete(limits = c("full","persistance"), labels = c("full model","persistence"), name = "")+
+  scale_color_manual(name = "", values = palette_6)+
+  xlab("Horizon (days)")+
+  facet_wrap("Year")+
+  theme_bw()+
+  #theme(strip.background = element_blank(),
+  #      strip.text.x = element_blank())+
+  theme(strip.text = element_text(margin = margin(2,2,2,2, unit = "pt")))+
+  guides(lty = guide_legend(order = 1))+
+  labs(tag = "A")
+
+#jpeg("../DO_modeling_figures/Forecast evaluation - rmse.jpg", width = 6, height = 3.1, units = "in", res = 300)
+#rmse_all %>%
+#  filter(Year!=2017, 
+#         Model %in% c("full","persistance"))%>%
+#  ggplot(aes(x = n, y = val, lty = Model))+
+#  geom_line()+
+#  ylab(expression(paste("RMSE (mg ",L^-1," )")))+
+#  scale_linetype_discrete(limits = c("full","persistance"), labels = c("full model","persistence"), name = "")+
+#  xlab("Horizon (days)")+
+#  facet_wrap("Year")+
+#  theme_bw()+
+#  theme(legend.position = "bottom")
+#dev.off()
+
+rmse_temp_o2_filt <- rmse_all_filt %>%
+  filter(Year!=2017, 
+         Model %in% c("temp","o2", "full"))%>%
+  ggplot(aes(x = n, y = val, col = Model))+
+  geom_point()+
+  geom_line()+
+  ylab(expression(paste("RMSE (mg ",L^-1," )")))+
+  #scale_linetype_discrete(limits = c("temp","o2", "full"), labels = c("temperature-only","oxygen-only", "full model"), name = "")+
+  scale_color_manual(limits = c("temp","o2", "full"), labels = c("temperature-only","oxygen-only", "full model"), name = "", values = c("#e29578ff","#83c5beff","black"))+
+  xlab("Horizon (days)")+
+  facet_wrap("Year")+
+  theme_bw()+
+  labs(tag = "A")
+
+rmse_temp_o2 <- rmse_all %>%
+  filter(Year!=2017, 
+         Model %in% c("temp","o2", "full"))%>%
+  ggplot(aes(x = n, y = val, col = Model, lty = Model))+
+  geom_line()+
+  ylab(expression(paste("RMSE (mg ",L^-1," )")))+
+  scale_linetype_discrete(limits = c("temp","o2", "full"), labels = c("temperature-only","oxygen-only", "full model"), name = "")+
+  scale_color_manual(limits = c("temp","o2", "full"), labels = c("temperature-only","oxygen-only", "full model"), name = "", values = palette_6)+
+  xlab("Horizon (days)")+
+  facet_wrap("Year")+
+  theme_bw()+
+  labs(tag = "A")
+
+jpeg("../DO_modeling_figures/Forecast evaluation - rmse - o2_temp.jpg", width = 6, height = 4, units = "in", res = 300)
+rmse_all %>%
+  filter(Year!=2017, 
+         Model %in% c("full","temp", "o2"))%>%
+  ggplot(aes(x = n, y = val, color = Model))+
+  geom_line()+
+  ylab(expression(paste("RMSE (mg ",L^-1," )")))+
+  scale_color_manual(limits = c("full","temp","o2"), labels = c("full model","temperature-only","oxygen-only"), values = c("black","#e29578ff","#83c5beff"),name = "")+
+  xlab("Horizon (days)")+
+  facet_wrap("Year")+
+  theme_bw()+
+  theme(legend.position = "bottom")
+dev.off()
+#
+#jpeg("../DO_modeling_figures/Forecast evaluation - rmse - all.jpeg", width = 6, height = 4, units = "in", res = 300)
+#rmse_all %>%
+#  filter(Year!=2017, 
+#         Model %in% c("full","temp", "o2", "persistance"))%>%
+#  ggplot(aes(x = n, y = val, color = Model, lty = Model))+
+#  geom_line()+
+#  ylab(expression(paste("RMSE (mg ",L^-1," )")))+
+#  scale_color_manual(limits = c("full","temp","o2","persistance"), labels = c("full #model","temperature-only","oxygen-only","persistance"), values = c("grey20","magenta","deepskyblue","black"),name = "")+
+#  scale_linetype_manual(limits = c("full","temp","o2","persistance"), labels = c("full #model","temperature-only","oxygen-only","persistance"), values = c(1,1,1,3),name = "")+
+#  xlab("Horizon (days)")+
+#  facet_wrap("Year")+
+#  theme_bw()+
+#  theme(legend.position = "bottom")
+#dev.off()
+
+#Bias figure and crps
+
+#Just to get column names
+all_model <- read.csv(paste("../DO_modeling_results/",date,"/forecast_2013_full_model_all_uncert.csv",sep = ""))
+
+#Run through all saved forecasts
+for(year in seq(2013,2019)){
+  full <- read.csv(paste("../DO_modeling_results/",date,"/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
+    mutate(model = "full",
+           year = year)
+  o2 <- read.csv(paste("../DO_modeling_results/",date,"/forecast_",year,"_o2_model_all_uncert.csv",sep = ""))%>%
+    mutate(model = "o2",
+           year = year)
+  temp <- read.csv(paste("../DO_modeling_results/",date,"/forecast_",year,"_temp_model_all_uncert.csv",sep = ""))%>%
+    mutate(model = "temp",
+           year = year)
+  all_model = all_model%>%
+    full_join(full)%>%
+    full_join(o2)%>%
+    full_join(temp)
+}
+
+toCalcBias <- all_model
+years<- seq(2013,2019)
+models = c("full","o2","temp")
+n_days = 14
+n <- rep(seq(1,n_days),length(years)*length(models))
+year <- rep(years,each = n_days, times = length(models))
+model <- rep(models, each = length(years)*n_days)
+output_df <- data.frame(n, year, model)
+results <- as.data.frame(toCalcBias)
+for(model in models){
+  for(year in seq(2013,2019, by = 1)){
+    for(i in seq(1:n_days)){
+      predicted <- results[results$year == year & results$model == model, i+2]
+      observed <-  results[results$year == year & results$model == model, i+2 + n_days]
+      output_df$mean[output_df$n==i & output_df$year==year & output_df$model==model] <- mean(predicted[!is.na(observed)]-observed[!is.na(observed)])
+      output_df$sd[output_df$n==i & output_df$year==year & output_df$model==model]   <- sd(predicted[!is.na(observed)]-observed[!is.na(observed)])
+    }
+  }
+}
+
+
+#Adding crps
+for(i in 1:n_days){
+  for(j in 1:nrow(all_model)){
+    if(!is.na(all_model[j,paste("PLUS",i,"_obs",sep = "")])){
+        all_model[j,paste("PLUS",i,"_crps",sep = "")]<-crps(all_model[j,paste("PLUS",i,"_obs",sep = "")],c(all_model[j,paste("PLUS",i,"_pred",sep = "")],sqrt(all_model[j,paste("PLUS",i,"_var",sep = "")])))[1]
+    }
+  }
+}
+
+bias <- output_df%>%
+  filter(model == "full",
+         year != 2017)%>%
+  ggplot(aes(x = n, y = mean, col = as.factor(year)))+
+  geom_line()+
+  xlab("Horizon (days)")+
+  scale_color_manual(values = palette_6)+
+  ylab(expression(paste("Bias (mg ",L^-1," )")))+
+  theme_bw()+
+  labs(tag = "B")
+
+bias_temp_o2 <- output_df%>%
+  filter(model %in% c("temp","o2", "full"),
+         year != 2017)%>%
+  ggplot(aes(x = n, y = mean, col = model, lty = model))+
+  geom_line()+
+  xlab("Horizon (days)")+
+  scale_linetype_discrete(limits = c("temp","o2", "full"), labels = c("temperature-only","oxygen-only", "full model"), name = "")+
+  scale_color_manual(limits = c("temp","o2", "full"), 
+                     labels = c("temperature-only","oxygen-only", "full model"), 
+                     name = "",
+                     values = palette_6)+
+  ylab(expression(paste("Bias (mg ",L^-1," )")))+
+  facet_wrap(~year)+
+  theme_bw()+
+  labs(tag = "B")
+
+crps_all <- all_model[c(2,seq(45,ncol(all_model)))]
+crps_final = crps_all%>%
+  gather(day,crps,4:17)%>%
+  mutate(day_n = as.numeric(gsub("_crps",gsub("PLUS",day,replacement = ""),replacement = "")))%>%
+  group_by(model,year,day_n)%>%
+  summarize(crps = mean(crps, na.rm = T),
+            sd = sd(crps, na.rm = T))
+
+crps <- crps_final%>%
+  filter(year!=2017,
+         model == "full")%>%
+  ggplot(aes(x = day_n,y=crps, color = as.factor(year)))+
+  geom_line()+
+  xlab("Horizon (days)")+
+  scale_color_manual(values = palette_6)+
+  ylab("CRPS")+
+  scale_linetype_discrete(name = "",labels = c("all"))+
+  theme_bw()+
+  labs(tag = "C")
+
+crps_temp_o2 <- crps_final%>%
+  filter(year!=2017,
+         model %in% c("temp","o2", "full"))%>%
+  ggplot(aes(x = day_n,y=crps, col = model, lty = model))+
+  geom_line()+
+  scale_linetype_discrete(limits = c("temp","o2","full"), labels = c("temperature-only","oxygen-only", "full model"), name = "")+
+  scale_color_manual(limits = c("temp","o2","full"), 
+                       labels = c("temperature-only","oxygen-only", "full model"), 
+                       name = "", 
+                       values = palette_6)+
+  xlab("Horizon (days)")+
+  ylab("CRPS")+
+  facet_wrap(~year)+
+  theme_bw()+
+  labs(tag = "C")
+
+jpeg("../DO_modeling_figures/Forecast evaluation - full.jpg", width = 6, height = 3, units = "in", res = 300)
+grid_arrange_shared_legend(rmse,bias,crps, nrow = 1)
+dev.off()
+
+jpeg("../DO_modeling_figures/Forecast evaluation - temp o2.jpg", width = 6, height = 3, units = "in", res = 300)
+grid_arrange_shared_legend(rmse_temp_o2,bias_temp_o2, nrow = 1) #removed crps_temp_o2
+dev.off()
+
+output_df%>%filter(n == 14)%>%
+  group_by(model)%>%
+  summarize(abs_bias = mean(abs(mean)),
+            bias = mean(mean))
+
+rmse_all%>%
+  filter(n == 14)%>%
+  group_by(Model)%>%
+  summarize(min = min(val, na.rm = T),
+            max = max(val, na.rm = T),
+            mean = mean(val, na.rm = T))
+```
+
+
+```{r}
+date <- "21nov20"
+for(model_name in c("full","temp","o2")){ 
+  results_2013 <- read.csv(paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_all_uncert.csv", sep = ""), row.names = 1)
+  results_2014 <- read.csv(paste("../DO_modeling_results/",date,"/forecast_2014_",model_name,"_model_all_uncert.csv", sep = ""), row.names = 1)
+  results_2015 <- read.csv(paste("../DO_modeling_results/",date,"/forecast_2015_",model_name,"_model_all_uncert.csv", sep = ""), row.names = 1)
+  results_2016 <- read.csv(paste("../DO_modeling_results/",date,"/forecast_2016_",model_name,"_model_all_uncert.csv", sep = ""), row.names = 1)
+  results_2017 <- read.csv(paste("../DO_modeling_results/",date,"/forecast_2017_",model_name,"_model_all_uncert.csv", sep = ""), row.names = 1)
+  results_2018 <- read.csv(paste("../DO_modeling_results/",date,"/forecast_2018_",model_name,"_model_all_uncert.csv", sep = ""), row.names = 1)
+  results_2019 <- read.csv(paste("../DO_modeling_results/",date,"/forecast_2019_",model_name,"_model_all_uncert.csv", sep = ""), row.names = 1)
+  
+  results_total <- results_2013%>%
+    mutate(Year = 2013)%>%
+    full_join(results_2014 %>% mutate (Year = 2014))%>%
+    full_join(results_2015 %>% mutate (Year = 2015))%>%
+    full_join(results_2016 %>% mutate (Year = 2016))%>%
+    full_join(results_2017 %>% mutate (Year = 2017))%>%
+    full_join(results_2018 %>% mutate (Year = 2018))%>%
+    full_join(results_2019 %>% mutate (Year = 2019))
+  write.csv(results_total,paste("../DO_modeling_results/results_",model_name,"_",date,".csv", sep = ""))
+}
+
+results_full <- read.csv(paste("../DO_modeling_results/results_full_",date,".csv", sep = ""))
+results_o2<- read.csv(paste("../DO_modeling_results/results_o2_",date,".csv", sep = ""))
+results_temp<- read.csv(paste("../DO_modeling_results/results_temp_",date,".csv", sep = ""))
+results_all <- results_full%>%
+  mutate(model = "full")%>%
+  full_join(results_o2%>%mutate(model = "o2"))%>%
+  full_join(results_temp%>%mutate(model = "temp"))
+
+results_all$Day1_bin = NA
+results_all$Day1_bin[results_all$PLUS1_obs > 10] <-"> 2"
+results_all$Day1_bin[results_all$PLUS1_obs < 5] <-"< 2"
+results_all$Day1_bin <- factor(results_all$Day1_bin, levels = c("< 2","> 2"))
+
+
+## Exploratory graphs
+results_all%>%
+  mutate(TODAY = as.Date(TODAY, origin = "1970-01-01"))%>%
+  ggplot((aes(x = Day1_bin, y = PLUS1_pred-PLUS1_obs, color = model)))+
+  geom_boxplot()
+
+results_all%>%
+  group_by(model, Day1_bin)%>%
+    filter(!is.na(Day1_bin), 
+         !is.na(PLUS14_obs))%>%
+  summarize(rmse = rmse(PLUS14_obs, PLUS14_pred))%>%
+  ggplot((aes(x = Day1_bin, y = rmse, fill = model)))+
+  geom_bar(stat = "identity", position = "dodge")
+    
+### 1 day in the future
+results_all$Dif <- abs(results_all$PLUS1_pred - results_all$PLUS1_obs)
+anova <- aov(lm(results_all$Dif[results_all$Day1_bin == "< 2"]~results_all$model[results_all$Day1_bin == "< 2"]))
+TukeyHSD(anova)
+anova <- aov(lm(results_all$Dif[results_all$Day1_bin == "> 2"]~results_all$model[results_all$Day1_bin == "> 2"]))
+TukeyHSD(anova)
+
+#2 weeks in the future
+results_all$Dif <- abs(results_all$PLUS14_pred - results_all$PLUS14_obs)
+results_all$Day14_bin = NA
+results_all$Day14_bin[results_all$PLUS14_obs > 2] <-"> 2"
+results_all$Day14_bin[results_all$PLUS14_obs < 2] <-"< 2"
+results_all$Day14_bin <- factor(results_all$Day14_bin, levels = c("< 2","> 2"))
+anova <- aov(lm(results_all$Dif[results_all$Day14_bin == "< 2"]~results_all$model[results_all$Day14_bin == "< 2"]))
+TukeyHSD(anova)
+anova <- aov(lm(results_all$Dif[results_all$Day14_bin == "> 2"]~results_all$model[results_all$Day14_bin == "> 2"]))
+TukeyHSD(anova)
+
+results_all%>%
+  group_by(model, Day14_bin)%>%
+    filter(!is.na(Day14_bin))%>%
+  summarize(rmse = rmse(PLUS14_obs, PLUS14_pred))%>%
+  ggplot((aes(x = Day14_bin, y = rmse, fill = model)))+
+  geom_bar(stat = "identity", position = "dodge")
+
+
+results_all$Dif <- abs(results_all$PLUS14_pred - results_all$PLUS14_obs)
+results_all[results_all$Dif[results_all$model == "o2"] < results_all$Dif[results_all$model == "full"],]
+
+best_model = results_all%>%
+  dplyr::select(TODAY, model, Dif)%>%
+  filter(!is.na(TODAY))%>%
+  pivot_wider(names_from = model, values_from = Dif)%>%
+  filter(!is.na(full))%>%
+  mutate(TODAY = as.Date(TODAY, origin = "1970-01-01"))
+best_model$best = NA
+best_model$best[best_model$full < best_model$temp & best_model$full < best_model$o2] <- "full"
+best_model$best[best_model$full > best_model$temp & best_model$temp < best_model$o2] <- "temp"
+best_model$best[best_model$o2 < best_model$temp & best_model$full > best_model$o2] <- "o2"
+
+results_full%>%
+  mutate(TODAY = as.Date(TODAY, origin = "1970-01-01"))%>%
+  full_join(best_model)%>%
+  ggplot(aes(x = TODAY, y= PLUS14_obs, color = best))+
+  geom_point()
+
+
+chem = read.csv("../DO_modeling_data/chemistry.csv")
+
+chem = chem%>%
+  mutate(Date = as.Date(DateTime), 
+         Year = year(Date))%>%
+  filter(Reservoir == "FCR", Site == 50, Year!= 2017, Depth_m >= 5)%>%
+  group_by(Date, Year)%>%
+  summarize(DOC_mgL = mean(DOC_mgL, na.rm = T),
+            TP_ugL = mean(TP_ugL, na.rm = T))
+
+chem%>%
+  ggplot(aes(x = Date, y = TP_ugL))+
+  geom_point()+
+  facet_wrap(~Year, scales = "free_x")
+
+results_extra = results_full%>%
+  mutate(TODAY = as.Date(TODAY, origin = "1970-01-01"))%>%
+  full_join(best_model)%>%
+  mutate(TODAY = TODAY+14)%>%
+  full_join(obs2 %>% rename(TODAY = datetime))%>%
+  full_join(chem %>% rename(TODAY = Date))%>%
+  mutate(Temp_minus_O2 = temp-o2)
+
+results_extra%>%
+  ggplot(aes(x = Temp_C, y = temp-o2, color = best))+
+  geom_point()
+
+results_extra%>%  
+  ggplot(aes(x = O2_mgL, y = temp-o2, color = best))+
+  geom_point()
+
+results_extra%>%
+  ggplot(aes(x = TP_ugL, y = temp-o2, color = best))+
+  geom_point()
+
+results_extra%>%
+  ggplot(aes(x = DOC_mgL, y = temp-o2, color = best))+
+  geom_point()
+
+results_all$Dif <- abs(results_all$PLUS14_pred - results_all$PLUS14_obs)
+results_all = results_all%>%
+  mutate(TODAY = as.Date(TODAY, origin = "1970-01-01"))%>%
+  full_join(obs2 %>% rename(TODAY = datetime))
+results_all$Temp_bin = NA
+results_all$Temp_bin[results_all$Temp_C > 12] <-"> 12"
+results_all$Temp_bin[results_all$Temp_C < 12] <-"< 12"
+results_all$Temp_bin <- factor(results_all$Temp_bin, levels = c("< 12","> 12"))
+anova <- aov(lm(results_all$Dif[results_all$Temp_bin == "< 12"]~results_all$model[results_all$Temp_bin == "< 12"]))
+TukeyHSD(anova)
+anova <- aov(lm(results_all$Dif[results_all$Temp_bin == "> 12"]~results_all$model[results_all$Temp_bin == "> 12"]))
+TukeyHSD(anova)
+
+#results_extra <- results_extra%>%
+  #filter(O2_mgL>0.2)
+results_extra$Temp_or_O2 <- results_extra$temp>results_extra$o2
+lm_temp_o2 <- glm(Temp_or_O2 ~ PLUS14_obs*Temp_C, data = results_extra, family = "binomial")
+summary(lm_temp_o2)
+
+library(MASS)
+model = lm(Temp_minus_O2 ~ O2_mgL+Temp_C+DOC_mgL+TP_ugL, data = results_extra%>%
+             filter(!is.na(Temp_minus_O2),
+                    !is.na(DOC_mgL),
+                    !is.na(TP_ugL),
+                    !is.na(O2_mgL),
+                    !is.na(Temp_C)))
+step = stepAIC(model, scope = .~.^2)
+summary(step)
+library(MuMIn)
+model = lm(Temp_minus_O2 ~ O2_mgL+Temp_C, data = results_extra)
+AICc(model)
+model = lm(Temp_minus_O2 ~ O2_mgL + Temp_C + DOC_mgL + Temp_C:DOC_mgL + O2_mgL:Temp_C, data = results_extra)
+AICc(model)
+summary(model)
+
+model = lm(Temp_minus_O2 ~ O2_mgL + Temp_C + O2_mgL:Temp_C, data = results_extra) #add + O2_mgL:Temp_C when not using observed drivers
+
+minO2 <- min(results_extra$O2_mgL, na.rm = T)
+maxO2 <- max(results_extra$O2_mgL, na.rm = T)
+min_temp <- min(results_extra$Temp_C, na.rm = T)
+max_temp <- max(results_extra$Temp_C, na.rm = T)
+num_obs <- 1000
+pct_o2 <- abs(minO2-maxO2)/100
+pct_temp <- abs(min_temp - max_temp)/100
+mino22<-minO2-5*pct_o2
+maxo22<-maxO2+5*pct_o2
+mint2<-min_temp-5*pct_temp
+maxt2 <- max_temp+5*pct_temp
+O2_range <- seq(mino22,maxo22+5*pct_o2,length.out = num_obs)
+temp_range <- seq(mint2-5*pct_temp,maxt2+5*pct_temp,length.out = num_obs)
+O2_vect <- rep(O2_range, num_obs)
+temp_vect <- rep(temp_range, each = num_obs)
+sim <- data.frame(O2_vect,temp_vect)
+colnames(sim) <- c("O2_mgL", "Temp_C")
+sim$pred <- predict(model,sim)
+
+o2 <- sim %>%
+  ggplot(aes(x = Temp_C, y = O2_mgL))+
+  geom_raster(aes(fill = pred>0), interpolate = TRUE)+
+  scale_fill_manual(labels = c("temperature-only","oxygen-only"), values = c("#E6B897","#B9D2DD"))+
+  geom_point(data = results_extra, mapping = aes(x = Temp_C, y = O2_mgL, fill = temp>o2, size = abs(temp-o2)), pch = 21)+
+  labs(fill = "Best forecast", size = "Magnitude of \ndifference (mg/L)")+
+  ylab("Oxygen concentration (mg/L)")+
+  xlab("Temperature (ºC)")+
+  scale_x_continuous(expand = c(0,0))+
+  scale_y_continuous(expand = c(0,0))
+  #theme(legend.position="bottom",aspect.ratio = 1,
+  #      text = element_text(size=20),
+  #      legend.key.width = unit(.5, "in"))+
+  #guides(guide_legend(nrow = 2, byrow = TRUE))
+
+jpeg("../DO_modeling_figures/when is o2 better_for talk.jpeg", res = 300, width = 6, height = 6, units = "in")
+o2+
+  theme(legend.position = "bottom",legend.box="vertical",text = element_text(size=18))+
+  guides(fill = guide_legend(order=1))
+dev.off()
+
+model = lm(Temp_minus_O2 ~ DOC_mgL + Temp_C + DOC_mgL:Temp_C, data = results_extra)
+
+min_temp <- min(results_extra$Temp_C, na.rm = T)
+max_temp <- max(results_extra$Temp_C, na.rm = T)
+min_doc <- min(results_extra$DOC_mgL, na.rm = T)
+max_doc <- max(results_extra$DOC_mgL, na.rm = T)
+pct_doc <- abs(min_doc - max_doc)/100
+pct_temp <- abs(min_temp - max_temp)/100
+mint2<-min_temp-5*pct_temp
+maxt2 <- max_temp+5*pct_temp
+mind2<-min_doc-5*pct_doc
+maxd2 <- max_doc+5*pct_doc
+temp_range <- seq(mint2-5*pct_temp,maxt2+5*pct_temp,length.out = num_obs)
+doc_range <- seq(mind2-5*pct_doc,maxd2+5*pct_doc,length.out = num_obs)
+temp_vect <- rep(temp_range, each = num_obs)
+doc_vect <- rep(doc_range, num_obs)
+sim <- data.frame(temp_vect,doc_vect)
+colnames(sim) <- c("Temp_C","DOC_mgL")
+sim$pred <- predict(model,sim)
+
+doc <- sim %>%
+  ggplot(aes(x = Temp_C, y = DOC_mgL))+
+  geom_raster(aes(fill = pred>0), interpolate = TRUE)+
+  scale_fill_manual(labels = c("temperature-only","oxygen-only"), values = c("#E6B897","#B9D2DD"))+
+  geom_point(data = results_extra, mapping = aes(x = Temp_C, y = DOC_mgL, fill = temp>o2, size = abs(temp-o2)), pch = 21)+
+  labs(fill = "Best forecast", size = "Magnitude of \ndifference (mg/L)")+
+  ylab("DOC (mg/L)")+
+  xlab("Temperature (ºC)")+
+  scale_x_continuous(expand = c(0,0))+
+  scale_y_continuous(expand = c(0,0))
+
+jpeg("../DO_modeling_figures/when is o2 better.jpeg", res = 300, width = 7, height = 4, units = "in")
+grid_arrange_shared_legend(o2,doc,nrow = 1)
+dev.off()
+```
+
+
+
+
+```{r}
+source('DO_forecasting_functions_05Apr20.R')
+#Just to get column names
+all <- read.csv(paste("../DO_modeling_results/15Sep20/forecast_2013_full_model_all_uncert.csv",sep = ""))
+SDs = all[FALSE,seq(31,44)] #This says SD but it is actually var throughout
+
+#Run through all saved forecasts
+for(year in seq(2013,2019)){
+  full <- read.csv(paste("../DO_modeling_results/15Sep20/forecast_",year,"_full_model_all_uncert.csv",sep = ""))%>%
+    mutate(uncert = "all",
+           year = year)
+  full_var <- sd_sum(full,"all",year)
+  param <- read.csv(paste("../DO_modeling_results/15Sep20/forecast_",year,"_full_model_param_uncert.csv",sep = ""))%>%
+    mutate(uncert = "param",
+           year = year)
+  param_var <- sd_sum(param,"param",year)
+  driver <- read.csv(paste("../DO_modeling_results/15Sep20/forecast_",year,"_full_model_driver_uncert.csv",sep = ""))%>%
+    mutate(uncert = "driver",
+           year = year)
+  driver_var <- sd_sum(driver,"driver",year)
+  init <- read.csv(paste("../DO_modeling_results/15Sep20/forecast_",year,"_full_model_init_uncert.csv",sep = ""))%>%
+    mutate(uncert = "init",
+           year = year)
+  init_var <- sd_sum(init,"init",year)
+  proc <- read.csv(paste("../DO_modeling_results/15Sep20/forecast_",year,"_full_model_proc_uncert.csv",sep = ""))%>%
+    mutate(uncert = "proc",
+           year = year)
+  proc_var <- sd_sum(proc,"proc",year)
+  SDs = SDs%>%
+    full_join(full_var)%>%
+    full_join(param_var)%>%
+    full_join(driver_var)%>%
+    full_join(init_var)%>%
+    full_join(proc_var)
+}
+
+
+SDs_final = SDs%>%
+  pivot_longer(names_to = "day",values_to = "var",1:14)%>%
+  mutate(day_n = as.numeric(gsub("_var",gsub("PLUS",day,replacement = ""),replacement = "")))%>%
+  dplyr::select(-day)
+
+png("../DO_modeling_figures/uncert_horiz.png",width = 6, height = 3, units = "in", res = 300)
+SDs_final$uncert <- factor(SDs_final$uncert, levels = c("init","param","driver","proc","all"))
+SDs_final%>%
+  filter(uncert != "all",
+         year != 2017)%>%
+  ggplot(aes(x = day_n,y=var, fill = uncert))+
+  geom_bar(stat = "identity")+
+  facet_wrap("year")+
+  scale_fill_manual(name = "Uncertainty", 
+                      limits = c("init","param","driver","proc"), 
+                      labels = c("Initial conditions","Parameter","Driver","Process"),
+                      values = palette_5[1:4])+
+  xlab("Days past forecast generation")+
+  ylab("Variance")+
+  geom_line(aes(x = day_n, y = var, lty=uncert), data = SDs_final %>% filter(uncert == "all", year != 2017))+
+  scale_linetype_discrete(labels = c("All"))+
+  scale_x_continuous(breaks = c(0,7,14))+
+  guides(lty = guide_legend(order = 0, title = NULL, title.position = "bottom"),
+         fill = guide_legend(order = 1))+
+  theme_bw()+
+  theme(legend.margin = margin(t = 0, r = 0, b = -10 , l = 0, unit = "pt"))
+dev.off()
+```
+
+```{r}
+#Load saved parameters
+param_corr <- read.csv(paste("../DO_modeling_results/15Sep20/params_2013_full.csv",sep = ""))
+for(year in seq(2013,2019)){
+  full <- read.csv(paste("../DO_modeling_results/15Sep20/params_",year,"_full.csv",sep = ""))%>%
+    mutate(model = "full",
+           year = year)
+  param_corr = param_corr%>%
+    full_join(full)
+}
+start_stop <- read.csv("../DO_modeling_data/start_stop.csv") #load start and end dates for the stratified period of each summer
+start = as.Date(start_stop$start_all) #format as date
+stop = as.Date(start_stop$stop_all)
+
+start = data.frame(start)
+start$year = year(start$start)
+param_corr2 <- param_corr%>%
+  dplyr::select(-X)%>%
+  left_join(start, by = "year")%>%
+  mutate(Calendar_date = start+Date-1,
+         doy = strftime(Calendar_date, format = "%j"))%>%
+  group_by(model,year,doy, Var)%>%
+  summarize(mean = mean(value),
+            sd = sd(value))
+
+param_corr3 <- param_corr%>%
+  dplyr::select(-X)%>%
+  left_join(start, by = "year")%>%
+  mutate(Calendar_date = start+Date-1,
+         doy = strftime(Calendar_date, format = "%j"))
+
+gg_color_hue <- function(n, l) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l, c = 100)[1:n]
+}
+cols <- gg_color_hue(6, 65)
+cols_dark <- gg_color_hue(6, 55)
+
+jpeg("../DO_modeling_figures/Parameter evolution.jpg",width = 6, height = 3, units = "in", res = 300)
+param_corr2%>%
+  filter(year!=2017)%>%
+  ggplot(aes(x = as.numeric(doy), y = mean, fill = as.factor(year)))+
+  scale_fill_manual(values = cols, name = "Year")+
+  geom_ribbon(aes(ymin = mean-sd, ymax= mean+sd), alpha = 0.2)+
+  geom_line(aes(color = as.factor(year)))+
+  scale_color_manual(values = cols_dark,name = "Year")+
+  facet_wrap(~Var, scales = "free_y")+
+  xlab("Day of year")+
+  ylab("")+
+  theme_bw()
+dev.off()
+```
+
+
+
