@@ -24,7 +24,7 @@ library(Metrics)
 n_en = 100 # number of ensembles 
 # coefficient of variation (CV) as a representation of uncertainty 
 param_cv = c(R20 = .3,
-             theta = 0.05,
+             theta = 0.005,
              ko2 = .3,
              sss_scalar = .2)
 driver_cv = c(SSS = .2,

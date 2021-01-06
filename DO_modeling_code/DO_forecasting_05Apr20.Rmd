@@ -33,7 +33,7 @@ Created 20 March 20 to convert my model to a forecasting framework
 To do:
 - Check observation error
 - Research oxygen max
-- Talk to Quinn about best practices for archiving forecast runs. Do I need to save all drivers/parameters/etc from each run?
+- Convert to EFI standard
 
 Done:
 - Set aside some data as test (2013, 2015, 2019) and some as training (2014, 2016, 2017, 2018): DONE
@@ -83,10 +83,10 @@ param_cv = c(R20 = .3,
              ko2 = .3,
              sss_scalar = .2)
 driver_cv = c(SSS = .2,
-              temp = .1,
+              temp = .05,
               o2_mgL = 0) # Coefficient of variation of driver data 
 init_cond_cv = 0.05
-proc_sd <- 0.1 #Calculated below (last code chunk)
+proc_sd <- 0.2 #Calculated below (last code chunk)
 obs_cv = 0.05
 ```
 
@@ -356,7 +356,7 @@ dev.off()
 
 Run forecasts!
 ```{r}
-for(model_name in c("full", "temp","o2")){ #,"temp","o2","sss"
+for(model_name in c("full")){ #,"temp","o2","sss"
   for(uncert in c("all")){ #,"param","init","proc","driver"
     run_space <- 1 #Number of days between runs of the model
     n_days <- 14 #Forecast horizon
@@ -1043,9 +1043,3 @@ driver_cv = driver_cv2
 init_cond_cv = init_cond_cv2
 model = O2_model
 ```
-
-Notes for next steps: 
-Informed priors for parameters (there are points where r20 = -20)
-Make it so that the kalman filter only runs when there's an observation -- the idea of comparing it to 0 seems v sketch???
-Quantify uncertainty at each time step
-Run for other years
