@@ -74,9 +74,9 @@ Make file
 ens = seq(1,100)
 forecasts_all <- data.frame(ens)
 for(year in seq(2013,2019,by=1)){
-  files = list.files(paste0("../Archived_forecasts/15Sep20/",year))
+  files = list.files(paste0("../Archived_forecasts/06Jan21/",year))
   for(file in files){
-    forecast = read.csv(paste0("../Archived_forecasts/15Sep20/",year,"/",file))
+    forecast = read.csv(paste0("../Archived_forecasts/06Jan21/",year,"/",file))
     date = gsub(".csv","",file)
     forecasts_all[date]<-sort(t(forecast[nrow(forecast),2:101]))
   }
@@ -85,9 +85,9 @@ for(year in seq(2013,2019,by=1)){
 ens = seq(1,100)
 temps_all <- data.frame(ens)
 for(year in seq(2013,2019,by=1)){
-  files = list.files(paste0("../Archived_temps/06Nov20/",year))
+  files = list.files(paste0("../Archived_temps/06Jan21/",year))
   for(file in files){
-    forecast = read.csv(paste0("../Archived_temps/06Nov20/",year,"/",file))
+    forecast = read.csv(paste0("../Archived_temps/06Jan21/",year,"/",file))
     date = gsub(".csv","",file)
     temps_all[date]<-sort(t(forecast[nrow(forecast),2:101]))
   }
@@ -856,4 +856,27 @@ dev.off()
 ```
 
 
+Calculating temp CV
+```{r}
+temp_ana <- temp_graph_df%>%
+  left_join(obs2)%>%
+  filter(year(datetime) <2017)%>%
+  filter(!is.na(Temp_C))%>%
+  left_join(obs2%>%
+              ungroup()%>%
+              dplyr::select(datetime,Temp_C)%>%
+              mutate(Temp_C = !is.na(Temp_C),
+                     datetime = datetime - 14)%>%
+              rename(obs_yn = Temp_C)%>%ungroup())%>%
+  filter(obs_yn) #Filtering to 14-day forecasts that had an observation at the beginning (real 14-day forecasts)
+
+mean_temp = mean(temp_ana$Temp_C, na.rm = T) #12.13734 (mean temperature)
+sd = sd(temp_ana$mean-temp_ana$Temp_C) #(sd of 14-day residuals)
+per_day = sqrt(sd^2/14) #= 14-day SD = sd of each day squared then summed.
+#We want our confidence intervals to include 99% of points, so 3*sd
+three_sd = 3*per_day
+three_sd/mean_temp #Specified as a CV (divided by the mean), this comes to ~0.038. Rounding to 0.04
+
+hist(temp_ana$mean-temp_ana$Temp_C)
+```
 

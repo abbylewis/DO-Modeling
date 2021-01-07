@@ -322,7 +322,6 @@ createRmseDF <- function(n_days,results, cali = 14){
   rmse_thisYear
 }
 
-<<<<<<< HEAD
 #' Function to create a dataframe of NMAE, leaving out the first 14 days
 #' 
 #' @param n_days forecast horizon
@@ -345,8 +344,6 @@ createNmaeDF <- function(n_days,results, cali = 14){
   nmae_thisYear
 }
 
-=======
->>>>>>> 6e2ed9a39c1cde661e6e47fba1a0992f7f1316cf
 #' Function to calculate one rmse value, leaving out the first 14 days
 #' 
 #' @param n_days forecast horizon

@@ -83,10 +83,10 @@ param_cv = c(R20 = .3,
              ko2 = .3,
              sss_scalar = .2)
 driver_cv = c(SSS = .2,
-              temp = .05,
+              temp = .04,#Calculated in a code chunk in the Poster_figures_17Jul20.Rmd file
               o2_mgL = 0) # Coefficient of variation of driver data 
 init_cond_cv = 0.05
-proc_sd <- 0.2 #Calculated below (last code chunk)
+proc_sd <- 0.2 #I am working on these calculations in a chunk below but not sure where to go
 obs_cv = 0.05
 ```
 
@@ -362,13 +362,13 @@ for(model_name in c("full")){ #,"temp","o2","sss"
     n_days <- 14 #Forecast horizon
     #model_name = "full" #Options for model_name: SSS, temp, o2, full. SSS is no temp no o2, O2 is no temp. Temp is no o2.
     #uncert = "all" #Options = "all","init","driver","param","proc"
-    gif = T
-    archiveForecasts = F
+    gif = F
+    archiveForecasts = T
     #if(uncert == "all"){
     #  gif = T
     #  archiveForecasts = T}
     date <- format(Sys.Date(),"%d%b%y")
-    realDrivers = T
+    realDrivers = F
     
     #2013
     start = start_all[year(start_all)==2013]
@@ -687,7 +687,13 @@ all_sd_std = all_sd%>%
 ```{r}
 toCalcProcUncert <- all %>%
   filter(year(as.Date(TODAY))<=2017,
-         uncert == "all")
+         uncert == "all")%>%
+  left_join(all%>%
+              dplyr::select(TODAY, PLUS1_obs)%>%
+              mutate(TODAY = TODAY+1,
+                     PLUS1_obs = !is.na(PLUS1_obs))%>%
+              rename(obs_yn = PLUS1_obs))%>%
+  filter(obs_yn)
 n <- seq(1,n_days)
 output_df <- data.frame(n)
 results <- toCalcProcUncert
@@ -699,7 +705,7 @@ for(i in seq(1:n_days)){
   output_df$sd[output_df$n == i] <- sd(observed[!is.na(observed)] - predicted[!is.na(observed)])
 }
 output_df
-lm(output_df$mean~output_df$n)
+## What is process error?!? 
 ```
 
 
