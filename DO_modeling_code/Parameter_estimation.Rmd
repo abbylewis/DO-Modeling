@@ -11,8 +11,8 @@ Try executing this chunk by clicking the *Run* button within the chunk or by pla
 library(smoof)
 library(cmaesr)
 library(tidyverse)
-source('EnKF_functions_05Apr20_uncert.R')
-source('DO_forecasting_functions_05Apr20.R')
+source('EnKF_functions_04Nov20_uncert.R')
+source('DO_forecasting_functions_04Nov20.R')
 source('O2_models_24Mar20.R')
 library(lubridate)
 library(readxl)
@@ -28,7 +28,7 @@ param_cv = c(R20 = .3,
              ko2 = .3,
              sss_scalar = .2)
 driver_cv = c(SSS = .2,
-              temp = .1,
+              temp = .04,
               o2_mgL = 0) # Coefficient of variation of driver data 
 init_cond_cv = 0.05
 proc_sd <- 0.1 
@@ -77,28 +77,28 @@ param_est_fun <- function(parms){
   year = 2013
   start = start_all[year(start_all)==year]
   stop = stop_all[year(stop_all)==year]
-  results_2013 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  results_2013 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms, realDrivers = realDrivers)
   #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2013 <- calcRmseTotal(n_days, results_2013, cali = 14/run_space) # Calculate rmse for all days
   
   year = 2014
   start = start_all[year(start_all)==year]
   stop = stop_all[year(stop_all)==year]
-  results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  results_2014 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms, realDrivers = realDrivers)
   #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2014 <- calcRmseTotal(n_days, results_2014, cali = 14/run_space) # Calculate rmse for all days
   
   year = 2015
   start = start_all[year(start_all)==year]
   stop = stop_all[year(stop_all)==year]
-  results_2015 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  results_2015 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms, realDrivers = realDrivers)
   #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2015 <- calcRmseTotal(n_days, results_2015, cali = 14/run_space) # Calculate rmse for all days
   
   year = 2016
   start = start_all[year(start_all)==year]
   stop = stop_all[year(stop_all)==year]
-  results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms)
+  results_2016 <- runForecasts(start, stop, n_days, run_space, obs, delay = 5, model_name = model_name, gif = gif,avg_o2 = avg_o2,avg_temp=avg_temp,uncert = uncert, archiveForecasts = archiveForecasts, parms=parms, realDrivers = realDrivers)
   #write.csv(results_year,paste("../DO_modeling_results/",date,"/forecast_2013_",model_name,"_model_",uncert,"_uncert.csv", sep = ""))
   rmse_2016 <- calcRmseTotal(n_days, results_2016, cali = 14/run_space) # Calculate rmse for all days
   
@@ -118,6 +118,7 @@ param_est_fun <- function(parms){
   uncert = "all" #Options = "all","init","driver","param","proc"
   date <- format(Sys.Date(),"%d%b%y")
   archiveForecasts = F
+  realDrivers = F
   
 
 #R20 <- makeNumericParam(
