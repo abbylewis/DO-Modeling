@@ -363,20 +363,20 @@ EnKF = function(n_en = 100,
        # run model; 
       model_output_temp = model(times = t,
                               states = Y[1, t-1, n],
-                              parms = Y[2:5, t-1, n],
+                              parms = Y[2:(n_states_est+n_params_est), t-1, n],
                               inputs = drivers[t-1,,n])
       model_output<-as.data.frame(t(unlist(model_output_temp)))
-      colnames(model_output)<-c("O2_mgL","Two","Three","Four","Five")
+      nums <- c("Two","Three","Four","Five")
+      colnames(model_output)<-c("O2_mgL",nums[1:n_params_est])
       if(proc_uncert == T){
         delta_o2 <- Y[1, t-1, n]+rnorm(1,mean = 0, sd = proc_sd) #Add process error
       } else {delta_o2 <- Y[1, t-1, n]}
       #For oxygen I am adding the differential change to the original value
       Y[1, t, n] = model_output$O2_mgL+delta_o2 # store in Y vector. 
       if(Y[1 , t, n]<0){Y[1 , t, n]<-0}
-      Y[2 , t, n] = model_output[,2]
-      Y[3 , t, n] = model_output[,3]
-      Y[4 , t, n] = model_output[,4]
-      Y[5 , t, n] = model_output[,5]
+      for(i in 1:n_params_est){
+        Y[i+1 , t, n] = model_output[,i+1]
+      }
     }
     # check if there are any observations to assimilate 
     if(any(!is.na(obs[ , , t]))){

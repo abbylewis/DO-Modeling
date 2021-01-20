@@ -363,7 +363,7 @@ EnKF = function(n_en = 100,
        # run model; 
       model_output_temp = model(times = t,
                               states = Y[1, t-1, n],
-                              parms = Y[2:5, t-1, n],
+                              parms = Y[2:(n_states_est + n_params_est), t-1, n],
                               inputs = drivers[t-1,,n])
       model_output<-as.data.frame(t(unlist(model_output_temp)))
       colnames(model_output)<-c("O2_mgL","Two","Three","Four","Five")

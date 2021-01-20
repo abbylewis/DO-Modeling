@@ -31,6 +31,7 @@ Created 20 March 20 to convert my model to a forecasting framework
 - This one script can do normal, temp, o2, sss, and persistence forecasts, and it can do every type of uncertainty
 
 To do:
+- Make it so temp and o2 models don't use the mean they just don't include the other variable at all
 - Check observation error
 - Research oxygen max
 - Convert to EFI standard
