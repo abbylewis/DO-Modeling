@@ -577,7 +577,6 @@ runForecasts <- function(start, stop, n_days, run_space, obs, gif = TRUE, archiv
           write.csv(saved_params,paste("../DO_modeling_results/",date,"/params_",year,"_",model_name,".csv", sep = ""))
         }
       }
-}
   return(results)
 }
 
