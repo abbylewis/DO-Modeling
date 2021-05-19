@@ -1,0 +1,147 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(smoof)
+library(cmaesr)
+library(tidyverse)
+source('DO_modeling_functions_12May21.R')
+source('O2_models_20Jan21.R')
+library(lubridate)
+library(readxl)
+library(zoo)
+library(Metrics)
+```
+
+```{r}
+#Create observations dataframe
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+CTD = CTD%>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date))
+obs <- CTD %>%
+  filter(!is.na(Conc))%>%
+  dplyr::select(Date, Conc)%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(O2_mgL = mean(Conc))
+
+mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
+median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
+
+#Create driver data frame (called model_inputs)
+SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+SSS$time <- as.Date(SSS$time)
+
+### SSS ADJUSTMENT
+SSS[year(SSS$time)==2019,"scfm"]<- .8*SSS[year(SSS$time)==2019,"scfm"]
+  
+start_stop <- read.csv("../DO_modeling_data/start_stop.csv")
+start_all = as.Date(start_stop$start_all)
+stop_all = as.Date(start_stop$stop_all)
+avgs <- calc_avg(start_all,stop_all,CTD,SSS)
+avg_temp<-unlist(avgs[1])
+avg_o2<-unlist(avgs[2])
+avg_hypoVolume<-unlist(avgs[3])
+CTD$hypoVolume<-avg_hypoVolume
+realDrivers=T
+
+start_2013 = start_all[year(start_all)==2013]
+stop_2013 = stop_all[year(stop_all)==2013]
+inputs_2013 <- format_model_inputs(start_2013,stop_2013,CTD,SSS,obs,today = stop_2013, realDrivers = realDrivers)
+dates = data.frame(seq(start_2013,stop_2013,by = "days"))
+colnames(dates) <- "datetime"
+obs_2013 = dates %>%
+  left_join(obs)
+
+start_2014 = start_all[year(start_all)==2014]
+stop_2014 = stop_all[year(stop_all)==2014]
+inputs_2014 <- format_model_inputs(start_2014,stop_2014,CTD,SSS,obs,today = stop_2014, realDrivers = realDrivers)
+dates = data.frame(seq(start_2014,stop_2014,by = "days"))
+colnames(dates) <- "datetime"
+obs_2014 = dates %>%
+  left_join(obs)
+
+start_2015 = start_all[year(start_all)==2015]
+stop_2015 = stop_all[year(stop_all)==2015]
+inputs_2015 <- format_model_inputs(start_2015,stop_2015,CTD,SSS,obs,today = stop_2015, realDrivers = realDrivers)
+dates = data.frame(seq(start_2015,stop_2015,by = "days"))
+colnames(dates) <- "datetime"
+obs_2015 = dates %>%
+  left_join(obs)
+
+start_2016 = start_all[year(start_all)==2016]
+stop_2016 = stop_all[year(stop_all)==2016]
+inputs_2016 <- format_model_inputs(start_2016,stop_2016,CTD,SSS,obs,today = stop_2016, realDrivers = realDrivers)
+dates = data.frame(seq(start_2016,stop_2016,by = "days"))
+colnames(dates) <- "datetime"
+obs_2016 = dates %>%
+  left_join(obs)
+```
+
+```{r}
+param_est_fun <- function(parms){
+  print(parms)
+  test_2013 <- predict_no_enkf(start_2013,stop_2013,obs,drivers = inputs_2013,parms = parms, model = O2_model)
+  rmse_2013 <- rmse(obs_2013$O2_mgL[!is.na(obs_2013$O2_mgL)], test_2013$Y[!is.na(obs_2013$O2_mgL)])
+  
+  test_2014 <- predict_no_enkf(start_2014,stop_2014,obs,drivers = inputs_2014,parms = parms, model = O2_model)
+  rmse_2014 <- rmse(obs_2014$O2_mgL[!is.na(obs_2014$O2_mgL)], test_2014$Y[!is.na(obs_2014$O2_mgL)])
+    
+  test_2015 <- predict_no_enkf(start_2015,stop_2015,obs,drivers = inputs_2015,parms = parms, model = O2_model)
+  rmse_2015 <- rmse(obs_2015$O2_mgL[!is.na(obs_2015$O2_mgL)], test_2015$Y[!is.na(obs_2015$O2_mgL)])
+  
+  test_2016 <- predict_no_enkf(start_2016,stop_2016,obs,drivers = inputs_2016,parms = parms, model = O2_model)
+  rmse_2016 <- rmse(obs_2016$O2_mgL[!is.na(obs_2016$O2_mgL)], test_2016$Y[!is.na(obs_2016$O2_mgL)])
+    
+  rmses = c(rmse_2013, rmse_2014, rmse_2015, rmse_2016)
+  rmse_final = mean(rmses, na.rm = T)
+  print(rmse_final)
+  return(rmse_final)
+}
+```
+
+```{r}
+par.set = makeNumericParamSet(len = 4L, id = "parms",
+                              lower = c(0,1.06,.4,1.5), upper = c(2,1.09,1.7,4.5),vector = TRUE) 
+
+objective.fun = makeSingleObjectiveFunction(name = "objective function", 
+                                           id = NULL,
+                                           description = paste0("enKF DO function for all years"), 
+                                           fn = param_est_fun, 
+                                           par.set = par.set,
+                                           noisy = F, 
+                                           fn.mean = NULL,
+                                           minimize = T, 
+                                           vectorized = F, 
+                                           constraint.fn = NULL)
+
+cmaes(objective.fun, start.point = c(.7,1.08,.2,3))
+```
+
+Example
+```{r}
+library(smoof)
+fn <- makeSingleObjectiveFunction(
+  name = "2D-Sphere",
+  fn = function(x) x[1]^2 + x[2]^2,
+  par.set = makeNumericParamSet(
+  len = 2L, id = "x",
+  lower = c(-10, -10), upper = c(10, 10),
+  vector = TRUE
+  ),
+  tags = "unimodal",
+  global.opt.param = c(0, 0),
+  global.opt.value = 0
+)
+library(cmaesr)
+cmaes(fn)
+
+fn(list(0,0))
+```
+
+
+

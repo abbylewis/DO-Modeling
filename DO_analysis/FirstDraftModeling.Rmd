@@ -1,0 +1,78 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(tidyverse)
+library(lubridate)
+source('../DO_modeling_code/DO_forecasting_functions_04Nov20.R')
+source('../DO_modeling_code/O2_models_24Mar20.R')
+```
+
+Goals: 
+- incorporate chemical oxygen demand
+- Modify existing structure rather than recreating:
+    - reset to observations at each time point
+    - remove uncertainty, enkf so parameters are static
+
+Get data in the right format
+```{r}
+#Create observations dataframe
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+CTD = CTD%>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date))
+obs <- CTD %>%
+  filter(!is.na(Conc))%>%
+  dplyr::select(Date, Conc)%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(O2_mgL = mean(Conc))
+
+mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
+median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
+
+#Create driver data frame (called model_inputs)
+SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
+SSS$time <- as.Date(SSS$time)
+
+### SSS ADJUSTMENT
+#SSS[year(SSS$time)==2019,"scfm"]<- .8*SSS[year(SSS$time)==2019,"scfm"]
+  
+start_stop <- read.csv("../DO_modeling_data/start_stop.csv")
+start_all = as.Date(start_stop$start_all)
+stop_all = as.Date(start_stop$stop_all)
+avgs <- calc_avg(start_all,stop_all,CTD,SSS)
+avg_temp<-unlist(avgs[1])
+avg_o2<-unlist(avgs[2])
+avg_hypoVolume<-unlist(avgs[3])
+CTD$hypoVolume<-avg_hypoVolume
+
+start = start_all[year(start_all)==2013]
+stop = stop_all[year(stop_all)==2013]
+inputs_2013 <- inputs_year(start,stop,CTD,SSS)
+```
+
+
+Just fit the model and look at which is best by year (static parameters)
+```{r}
+parms <- c(
+  R20=0.5303,
+  theta = 1.0866,
+  ko2 = 1.6410,
+  sss_scalar = 3.6423)
+
+ 
+```
+
+
+Reset to observations at each time step
+```{r}
+
+```
+
