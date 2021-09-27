@@ -18,6 +18,7 @@ library(knitr)
 source('DO_modeling_functions_12May21.R')
 source('O2_models_20Jan21.R')
 library(magick)
+library(rLakeAnalyzer)
 library(animation)
 library(Metrics)
 library(DTWBI)
@@ -27,18 +28,67 @@ library(DTWBI)
 Created 12 May 2021 to stop using enkf and convert to modeling framework
 
 TO DO:
-Create predictions for the entire summer with no data
-- Streamline code
-- Figure out why I am getting negative oxygen values
-Create predictions for each data point from the last data point
+Add 2020 data
+Model comparison: AIC?????
+Add in Fe data as a measure of chemical oxygen demand
+- Calculate total Fe mass using hypo volume
+- Started this^^^ but it is just using the volume of each layer, missing the in between layers. Also should then be divided by total volume
+Switch to Bayesian framework??
 
 DONE:
 Get existing code to run without EnKF
 Plot predictions with data
+Streamline code
+Get rid of negative oxygen demand problem
+Set up code for temp and o2-independent models
+Get best parameters for full model
+Get best parameters for o2 and temp models
+Create predictions for the entire summer with no data
+Create predictions for each data point from the last data point
+
+#```{r}
+#Create observations dataframe
+vol <- read_csv("../DO_modeling_data/BVR Bathymetry.csv")
+dt1 <- read.csv("../DO_modeling_data/CTD_final_2013_2020.csv")
+dt1$Date <- as.POSIXct(dt1$Date)
+dt1_culled <- dt1 %>%
+  filter(Site == 50 & Reservoir == "BVR" & !is.na(DO_mgL))
+depths <- vol$Depth_m
+df.final2<-dt1_culled %>% group_by(Date) %>% slice(which.min(abs(as.numeric(Depth_m) - depths[1]))) #Create a new dataframe
+df.final2$Depth_m <- depths[1]
+for (j in 2:length(depths)){ #loop through all depths and add the closest values to the final dataframe
+  ctd_atThisDepth <- dt1_culled %>% group_by(Date) %>% slice(which.min(abs(as.numeric(Depth_m) - depths[j])))
+  ctd_atThisDepth$Depth_m <- depths[j]
+  df.final2 <- rbind(df.final2,ctd_atThisDepth)
+}
+thermo <- df.final2 %>%
+  group_by(Date) %>%
+  summarize(meta_bottom = meta.depths(Temp_C, Depth_m)[2])
+vw <- df.final2 %>%
+  filter(as.Date(Date)!=as.Date("2017-07-06")) %>%
+  group_by(Date) %>%
+  left_join(thermo, by = "Date") %>%
+  mutate(Thermocline = meta_bottom) %>% 
+  ungroup() %>%
+  left_join(vol, by = "Depth_m")%>%
+  mutate(DO_Weighted = DO_mgL*Volume_L,
+         TP_Weighted = Temp_C*Volume_L) %>%
+  filter(Depth_m >= Thermocline,) %>%
+  group_by(Date) %>%
+  summarize(
+    thermo_depth = unique(Thermocline),
+    Vol_Weighted_DO = sum(DO_Weighted),
+    hypoVolume = sum(Volume_L),
+    Conc = Vol_Weighted_DO/hypoVolume,
+    Temp = sum(TP_Weighted)/hypoVolume,
+    Temp_sed = last(Temp_C),
+    Chla_ugL = mean(Chla_ugL),
+    SA_m2 = mean(SA_m2))
+write.csv(vw, "../DO_modeling_data/vol_weighted_do_bvr_2013_2020.csv")
+#```
 
 ```{r}
-#Create observations dataframe
-CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr.csv")
+CTD <- read.csv("../DO_modeling_data/vol_weighted_do_fcr_2013_2020.csv")
 CTD = CTD%>%
   filter(hypoVolume>0,
          !is.na(Conc))%>%
@@ -49,20 +99,35 @@ obs <- CTD %>%
   rename(datetime = Date)%>%
   group_by(datetime)%>%
   summarize(O2_mgL = mean(Conc))
+metals <- read.csv("../DO_modeling_data/metals_EDI_current.csv")%>%
+  filter(Reservoir == "FCR",
+         Site == 50)%>%
+  mutate(DateTime = as.POSIXct(DateTime, format = "%m/%d/%Y %H:%M:%S"))
+vol <- read_csv("../DO_modeling_data/FCR Bathymetry.csv")
+Depth_m = c(6.2,8,9)
+Volume_L = c(sum(vol$Volume_L[vol$Depth_m>=6.2&vol$Depth_m<8]),sum(vol$Volume_L[vol$Depth_m>=8&vol$Depth_m<9]),sum(vol$Volume_L[vol$Depth_m>=9]))
+vol = tibble(Depth_m,Volume_L)
+hypo_vol = sum(vol$Volume_L)
+metals_vw = metals%>%
+  filter(Depth_m>5)%>%
+  left_join(vol)%>%
+  mutate(Fe_g = TFe_mgL * Volume_L)%>%
+  group_by(DateTime)%>%
+  summarize(total_Fe_g = sum(Fe_g)/hypo_vol)%>%
+  mutate(Date = as.Date(DateTime))%>%
+  group_by(Date)%>%
+  summarize(total_Fe_g = mean(total_Fe_g))
 
 mean_hypo_ratio <- mean(CTD$SA_m2/CTD$hypoVolume)
 median_hypo_ratio <- median(CTD$SA_m2/CTD$hypoVolume)
 
-#Create driver data frame (called model_inputs)
 SSS <- read_excel("../DO_modeling_data/Calc_HOX_flow_DO_20190320.xlsx") 
 SSS$time <- as.Date(SSS$time)
 
 ### SSS ADJUSTMENT
 SSS[year(SSS$time)==2019,"scfm"]<- .8*SSS[year(SSS$time)==2019,"scfm"]
+SSS[year(SSS$time)==2020,"scfm"]<- .8*SSS[year(SSS$time)==2020,"scfm"]
   
-#start_all = as.Date(c("2013-05-30","2014-06-02","2015-05-28","2016-06-01","2017-06-28","2018-06-04","2019-06-03"))
-#stop_all = as.Date(c("2013-09-25","2014-10-04","2015-09-28","2016-09-30","2017-07-12","2018-10-22","2019-10-30"))
-#write.csv(data.frame(start_all,stop_all),"../DO_modeling_data/start_stop.csv")
 start_stop <- read.csv("../DO_modeling_data/start_stop.csv")
 start_all = as.Date(start_stop$start_all)
 stop_all = as.Date(start_stop$stop_all)
@@ -72,32 +137,90 @@ avg_o2<-unlist(avgs[2])
 avg_hypoVolume<-unlist(avgs[3])
 CTD$hypoVolume<-avg_hypoVolume
 
-#parms = c(0.5108, 1.1011, 0.6954, 3.6687)
-#no_sss <- 0.5108*1.1011^(avg_temp-20)*avg_o2/(avg_o2 + 0.6954)
-#with_sss <-  0.5108*1.1011^(avg_temp-20)*avg_o2/(avg_o2 + 0.6954)*3.6687
-#diff = with_sss - no_sss
-#sss_add <- 0.5*50*1000000/avg_hypoVolume
-#(sss_add-diff)/sss_add
-
 temp_slope = 0.03937878
-```
-```{r}
-## Parameters
-parms <- c(
-  R20=0.7728,
-  theta = 1.06,
-  ko2 = .4,
-  sss_scalar = 1.6014)
+
 ```
 
-Recording oxygen demand values
+
 ```{r}
+palette_6 = c("#006d77ff", "#83c5beff", "#e29578ff", "#922d50ff", "darkorchid1", "maroon1","seagreen3")
+
+jpeg("../DO_modeling_figures/temp_o2_disentangle.jpeg", res = 600, width = 6, height = 4, units = "in")
+CTD%>%
+  mutate(Year = year(Date))%>%
+  left_join(start_stop%>%mutate(Year = year(stop_all)), by="Year")%>%
+  filter(Date>=start_all, Date<=stop_all, Year!=2017)%>%
+  ggplot(aes(x = Temp, y = Conc, color = as.factor(Year)))+
+  geom_point()+
+  scale_color_manual(values = palette_6)+
+  xlab("Temperature (ºC)")+
+  ylab("Hypolimnetic oxygen (mg/L)")+
+  labs(color = "Year")+
+  theme_bw()
+dev.off()
+
+
+bvr <- read.csv("../DO_modeling_data/vol_weighted_do_bvr_2013_2020.csv")
+bvr = bvr%>%
+  filter(hypoVolume>0,
+         !is.na(Conc))%>%
+  mutate(Date = as.Date(Date))
+jpeg("../DO_modeling_figures/temp_o2_disentangle_bvr.jpeg", res = 600, width = 6, height = 4, units = "in")
+bvr%>%
+  mutate(Year = year(Date))%>%
+  #left_join(start_stop%>%mutate(Year = year(stop_all)), by="Year")%>%
+  #filter(Date>=start_all, Date<=stop_all, Year!=2017)%>%
+  filter(Year == 2018)%>%
+  ggplot(aes(x = Temp, y = Conc, color = as.factor(Year)))+
+  geom_point()+
+  xlab("Temperature (ºC)")+
+  ylab("Hypolimnetic oxygen (mg/L)")+
+  labs(color = "Year")+
+  theme_bw()
+dev.off()
+
+SSS%>%mutate(year = year(time))%>%filter(year==2018)
+```
+
+
+Running model and recording oxygen demand
+```{r}
+off_starts = SSS%>%
+  arrange(time)%>%
+  filter(lead(scfm == 0), scfm != 0)
+off_starts$time[off_starts$time==as.Date("2018-08-12")]<-as.Date("2018-08-14")
+off_starts$time[off_starts$time==as.Date("2019-07-19")]<-as.Date("2019-07-18")
+obs = obs%>%
+  filter(datetime %in% off_starts$time)
+off_ends = SSS%>%
+  arrange(time)%>%
+  filter(lag(scfm == 0), scfm != 0)
+
+restart = T
 realDrivers = T
-#2013
+model_name = "full" #full, o2, temp, sss
+if(model_name == "full"){
+  model = O2_model
+  parms = c(0.8315, 1.0200, 4, 1.6089)
+  #0.5754   parms2:    +1.0200   parms3:    +4.0000   parms4:    +2.3322, y =    +2.5291
+  }
+if(model_name == "temp"){
+  model = temp_model
+  parms = c(0.7019, 1.0613, 1.6972)}
+if(model_name == "o2"){
+  model = no_temp_model
+  parms = c(0.4216, 4.0000, 2.9012)}
+if(model_name == "sss"){
+  model = sss_model
+  parms = c(0.3003, 2.5570)}
+
+inc_metals = F
+
+#2013 (maybe can't do 2013--no iron data. Set inc_metals to F)
 start = start_all[year(start_all)==2013]
 stop = stop_all[year(stop_all)==2013]
-inputs_2013 <- format_model_inputs(start,stop,CTD,SSS,obs,today = stop, realDrivers = realDrivers)
-test_2013 <- predict_no_enkf(start,stop,obs,drivers = inputs_2013,parms = parms, model = O2_model)
+inputs_2013 <- format_model_inputs(start,stop,CTD,SSS,obs,metals_vw,today = stop, realDrivers = realDrivers, model_name = model_name, inc_metals = inc_metals)
+test_2013 <- predict_no_enkf(start,stop,obs,drivers = inputs_2013,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
 no_csss <- parms[1] * parms[2]^(test_2013$drivers[,2]-20)*test_2013$Y/(test_2013$Y+parms[3])
 demand <- no_csss
 temp <- parms[2]^(test_2013$drivers[,2]-20)
@@ -108,17 +231,14 @@ for(i in 1:length(no_csss)){
     demand[i] = demand[i]*parms[4]
   }
 }
-demand_all = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
+demand_all = tibble(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
 demand_all$year = 2013
-    
-#plot_o2(test_2013, stop, start, stop)
-#pairs(inputs_2013)
 
 #2014
 start = start_all[year(start_all)==2014]
 stop = stop_all[year(stop_all)==2014]
-inputs_2014 <- format_model_inputs(start,stop,CTD,SSS,obs,today = stop, realDrivers = realDrivers)
-test_2014 <- predict_no_enkf(start,stop,obs,drivers = inputs_2014,parms = parms, model = O2_model)
+inputs_2014 <- format_model_inputs(start,stop,CTD,SSS,obs,metals_vw, today = stop, realDrivers = realDrivers, model_name = model_name, inc_metals = inc_metals)
+test_2014 <- predict_no_enkf(start,stop,obs,drivers = inputs_2014,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
 no_csss <- parms[1] * parms[2]^(test_2014$drivers[,2]-20)*test_2014$Y/(test_2014$Y+parms[3])
 demand <- no_csss
 temp <- parms[2]^(test_2014$drivers[,2]-20)
@@ -129,76 +249,78 @@ for(i in 1:length(no_csss)){
     demand[i] = demand[i]*parms[4]
   }
 }
+#demand_all = tibble(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
+#demand_all$year = 2014
 demand_all_2014 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
 demand_all_2014$year = 2014
 demand_all = demand_all%>%
   full_join(demand_all_2014)
 
-#2015
-start = start_all[year(start_all)==2015]
-stop = stop_all[year(stop_all)==2015]
-inputs_2015 <- format_model_inputs(start,stop,CTD,SSS,obs,today = stop, realDrivers = realDrivers)
-test_2015 <- predict_no_enkf(start,stop,obs,drivers = inputs_2015,parms = parms, model = O2_model)
-no_csss <- parms[1] * parms[2]^(test_2015$drivers[,2]-20)*test_2015$Y/(test_2015$Y+parms[3])
-demand <- no_csss
-temp <- parms[2]^(test_2015$drivers[,2]-20)
-o2 <- test_2015$Y/(test_2015$Y+parms[3])
-r20 <- parms[1]
-for(i in 1:length(no_csss)){
-  if(test_2015$drivers[i,1] > 0){
-    demand[i] = demand[i]*parms[4]
-  }
-}
-demand_all_2015 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
-demand_all_2015$year = 2015
-demand_all = demand_all%>%
-  full_join(demand_all_2015)
-
-#2016
-start = start_all[year(start_all)==2016]
-stop = stop_all[year(stop_all)==2016]
-inputs_2016 <- format_model_inputs(start,stop,CTD,SSS,obs,today = stop, realDrivers = realDrivers)
-test_2016 <- predict_no_enkf(start,stop,obs,drivers = inputs_2016,parms = parms, model = O2_model)
-no_csss <- parms[1] * parms[2]^(test_2016$drivers[,2]-20)*test_2016$Y/(test_2016$Y+parms[3])
-demand <- no_csss
-temp <- parms[2]^(test_2016$drivers[,2]-20)
-o2 <- test_2016$Y/(test_2016$Y+parms[3])
-r20 <- parms[1]
-for(i in 1:length(no_csss)){
-  if(test_2016$drivers[i,1] > 0){
-    demand[i] = demand[i]*parms[4]
-  }
-}
-demand_all_2016 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
-demand_all_2016$year = 2016
-demand_all = demand_all%>%
-  full_join(demand_all_2016)
-
-#2017
-start = start_all[year(start_all)==2017]
-stop = stop_all[year(stop_all)==2017]
-inputs_2017 <- format_model_inputs(start,stop,CTD,SSS,obs,today = stop, realDrivers = realDrivers)
-test_2017 <- predict_no_enkf(start,stop,obs,drivers = inputs_2017,parms = parms, model = O2_model)
-no_csss <- parms[1] * parms[2]^(test_2017$drivers[,2]-20)*test_2017$Y/(test_2017$Y+parms[3])
-demand <- no_csss
-temp <- parms[2]^(test_2017$drivers[,2]-20)
-o2 <- test_2017$Y/(test_2017$Y+parms[3])
-r20 <- parms[1]
-for(i in 1:length(no_csss)){
-  if(test_2017$drivers[i,1] > 0){
-    demand[i] = demand[i]*parms[4]
-  }
-}
-demand_all_2017 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
-demand_all_2017$year = 2017
-demand_all = demand_all%>%
-  full_join(demand_all_2017)
-
+##2015
+#start = start_all[year(start_all)==2015]
+#stop = stop_all[year(stop_all)==2015]
+#inputs_2015 <- format_model_inputs(start,stop,CTD,SSS,obs,metals_vw,today = stop, realDrivers = realDrivers, model_name = model_name, inc_metals = inc_metals)
+#test_2015 <- predict_no_enkf(start,stop,obs,drivers = inputs_2015,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
+#no_csss <- parms[1] * parms[2]^(test_2015$drivers[,2]-20)*test_2015$Y/(test_2015$Y+parms[3])
+#demand <- no_csss
+#temp <- parms[2]^(test_2015$drivers[,2]-20)
+#o2 <- test_2015$Y/(test_2015$Y+parms[3])
+#r20 <- parms[1]
+#for(i in 1:length(no_csss)){
+#  if(test_2015$drivers[i,1] > 0){
+#    demand[i] = demand[i]*parms[4]
+#  }
+#}
+#demand_all_2015 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
+#demand_all_2015$year = 2015
+#demand_all = demand_all%>%
+#  full_join(demand_all_2015)
+#
+##2016
+#start = start_all[year(start_all)==2016]
+#stop = stop_all[year(stop_all)==2016]
+#inputs_2016 <- format_model_inputs(start,stop,CTD,SSS,obs,metals_vw,today = stop, realDrivers = realDrivers, model_name = model_name, inc_metals = inc_metals)
+#test_2016 <- predict_no_enkf(start,stop,obs,drivers = inputs_2016,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
+#no_csss <- parms[1] * parms[2]^(test_2016$drivers[,2]-20)*test_2016$Y/(test_2016$Y+parms[3])
+#demand <- no_csss
+#temp <- parms[2]^(test_2016$drivers[,2]-20)
+#o2 <- test_2016$Y/(test_2016$Y+parms[3])
+#r20 <- parms[1]
+#for(i in 1:length(no_csss)){
+#  if(test_2016$drivers[i,1] > 0){
+#    demand[i] = demand[i]*parms[4]
+#  }
+#}
+#demand_all_2016 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
+#demand_all_2016$year = 2016
+#demand_all = demand_all%>%
+#  full_join(demand_all_2016)
+#
+##2017
+#start = start_all[year(start_all)==2017]
+#stop = stop_all[year(stop_all)==2017]
+#inputs_2017 <- format_model_inputs(start,stop,CTD,SSS,obs,metals_vw,today = stop, realDrivers = realDrivers, model_name = model_name, inc_metals = inc_metals)
+#test_2017 <- predict_no_enkf(start,stop,obs,drivers = inputs_2017,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
+#no_csss <- parms[1] * parms[2]^(test_2017$drivers[,2]-20)*test_2017$Y/(test_2017$Y+parms[3])
+#demand <- no_csss
+#temp <- parms[2]^(test_2017$drivers[,2]-20)
+#o2 <- test_2017$Y/(test_2017$Y+parms[3])
+#r20 <- parms[1]
+#for(i in 1:length(no_csss)){
+#  if(test_2017$drivers[i,1] > 0){
+#    demand[i] = demand[i]*parms[4]
+#  }
+#}
+#demand_all_2017 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
+#demand_all_2017$year = 2017
+#demand_all = demand_all%>%
+#  full_join(demand_all_2017)
+#
 #2018
 start = start_all[year(start_all)==2018]
 stop = stop_all[year(stop_all)==2018]
-inputs_2018 <- format_model_inputs(start,stop,CTD,SSS,obs,today = stop, realDrivers = realDrivers)
-test_2018 <- predict_no_enkf(start,stop,obs,drivers = inputs_2018,parms = parms, model = O2_model)
+inputs_2018 <- format_model_inputs(start,stop,CTD,SSS,obs,metals_vw,today = stop, realDrivers = realDrivers, model_name = model_name, inc_metals = inc_metals)
+test_2018 <- predict_no_enkf(start,stop,obs,drivers = inputs_2018,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
 no_csss <- parms[1] * parms[2]^(test_2018$drivers[,2]-20)*test_2018$Y/(test_2018$Y+parms[3])
 demand <- no_csss
 temp <- parms[2]^(test_2018$drivers[,2]-20)
@@ -217,8 +339,8 @@ demand_all = demand_all%>%
 #2019
 start = start_all[year(start_all)==2019]
 stop = stop_all[year(stop_all)==2019]
-inputs_2019 <- format_model_inputs(start,stop,CTD,SSS,obs,today = stop, realDrivers = realDrivers)
-test_2019 <- predict_no_enkf(start,stop,obs,drivers = inputs_2019,parms = parms, model = O2_model)
+inputs_2019 <- format_model_inputs(start,stop,CTD,SSS,obs,metals_vw,today = stop, realDrivers = realDrivers, model_name = model_name, inc_metals = inc_metals)
+test_2019 <- predict_no_enkf(start,stop,obs,drivers = inputs_2019,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
 no_csss <- parms[1] * parms[2]^(test_2019$drivers[,2]-20)*test_2019$Y/(test_2019$Y+parms[3])
 demand <- no_csss
 temp <- parms[2]^(test_2019$drivers[,2]-20)
@@ -233,6 +355,26 @@ demand_all_2019 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_
 demand_all_2019$year = 2019
 demand_all = demand_all%>%
   full_join(demand_all_2019)
+
+#2020
+start = start_all[year(start_all)==2020]
+stop = stop_all[year(stop_all)==2020]
+inputs_2020 <- format_model_inputs(start,stop,CTD,SSS,obs,metals_vw,today = stop, realDrivers = realDrivers, model_name = model_name, inc_metals = inc_metals)
+test_2020 <- predict_no_enkf(start,stop,obs,drivers = inputs_2020,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
+no_csss <- parms[1] * parms[2]^(test_2020$drivers[,2]-20)*test_2020$Y/(test_2020$Y+parms[3])
+demand <- no_csss
+temp <- parms[2]^(test_2020$drivers[,2]-20)
+o2 <- test_2020$Y/(test_2020$Y+parms[3])
+r20 <- parms[1]
+for(i in 1:length(no_csss)){
+  if(test_2020$drivers[i,1] > 0){
+    demand[i] = demand[i]*parms[4]
+  }
+}
+demand_all_2020 = data_frame(no_csss, demand, temp, o2, r20, dsim = 1:length(no_csss))
+demand_all_2020$year = 2020
+demand_all = demand_all%>%
+  full_join(demand_all_2020)
 
 start = data.frame(start_all)
 start$year = year(start$start)
@@ -306,6 +448,7 @@ oxygen = data.frame(oxy = test_2013$Y, dsim = 1:length(test_2013$Y), year = 2013
   full_join(data.frame(oxy = test_2017$Y, dsim = 1:length(test_2017$Y), year = 2017))%>%
   full_join(data.frame(oxy = test_2018$Y, dsim = 1:length(test_2018$Y), year = 2018))%>%
   full_join(data.frame(oxy = test_2019$Y, dsim = 1:length(test_2019$Y), year = 2019))%>%
+  full_join(data.frame(oxy = test_2020$Y, dsim = 1:length(test_2020$Y), year = 2020))%>%
   left_join(start, by = "year")%>%
   mutate(Calendar_date = start_all+dsim-1,
          doy = strftime(Calendar_date, format = "%j"))%>%
@@ -317,9 +460,193 @@ oxygen%>%
   facet_wrap(~year, scales = "free_x")+
   theme_bw()+
   geom_point(aes(x = datetime, y = O2_mgL), data = obs%>% mutate(year = year(datetime)))
+
+write.csv(oxygen,paste0("predictions_",model_name,"_restart_",restart,".csv"))
 ```
 
 
+```{r}
+full = read.csv("predictions_full.csv")
+temp = read.csv("predictions_temp.csv")
+o2 = read.csv("predictions_o2.csv")
+sss = read.csv("predictions_sss.csv")
+
+all = full%>%
+  mutate(model = "full")%>%
+  full_join(temp%>%mutate(model = "temp"))%>%
+  full_join(o2%>%mutate(model = "o2"))%>%
+  #full_join(sss%>%mutate(model = "sss"))%>% #leaving this out for presentation because it does really well....
+  mutate(Calendar_date=as.Date(Calendar_date))%>%
+  mutate(model = as.factor(model))
+
+obs_plot =obs%>%
+  mutate(year = year(datetime))%>%
+  left_join(start_stop%>% mutate(year = year(start_all)), by = "year")%>%
+  filter(datetime>=start_all,
+         datetime<=stop_all)%>%
+  select(-start_all,-stop_all,-X)
+
+palette <- c("#e29578ff","#006d77ff", "grey20")
+
+jpeg("timeseries_all_models.jpg", width = 8, height = 3, units = "in", res = 300)
+all%>%
+  filter(year!=2017)%>%
+  ggplot(aes(x = Calendar_date, y = oxy))+
+  geom_line(aes(color = model))+
+  xlab("")+
+  ylab("Oxygen (mg/L)")+
+  scale_color_manual(limits = c("temp","o2", "full"), 
+                     labels = c("temperature-only","oxygen-only", "full model"),
+                     values = palette)+
+  facet_wrap(~year, scales = "free_x", nrow = 2)+
+  theme_bw()+
+  geom_point(aes(x = datetime, y = O2_mgL), data = obs_plot%>%filter(year!=2017))+
+  theme_bw()
+dev.off()
+
+colnames(obs_plot)
+colnames(all)
+
+resids = all%>%
+  select(-X, -doy, -dsim)%>%
+  rename(O2_mgL_model = oxy,
+         datetime = Calendar_date)%>%
+  left_join(obs_plot)%>%
+  filter(!is.na(O2_mgL))%>%
+  mutate(resids = O2_mgL_model-O2_mgL)
+
+resids%>%
+  filter(year != 2017)%>%
+  ggplot(aes(x = model, y = resids))+
+  geom_boxplot()+
+  facet_wrap(~year)
+
+resids%>%
+  filter(year != 2017)%>%
+  ggplot(aes(x = model, y = resids))+
+  geom_boxplot()
+
+rmse = resids%>%
+  group_by(model, year)%>%
+  summarize(rmse = rmse(O2_mgL,O2_mgL_model))
+rmse$type = "Training"
+rmse$type[rmse$year%in%c(2018,2019,2020)]<-"Test"
+rmse$type<-factor(rmse$type, levels = c("Training", "Test"))
+
+
+palette_6 = c("#006d77ff", "#83c5beff", "#e29578ff", "#922d50ff", "darkorchid1", "maroon1","seagreen3")
+
+jpeg("rmse.jpeg",res = 600, height = 3, width = 6, units = "in")
+rmse%>%
+  filter(year!=2017)%>%
+  ggplot(aes(x = model, y = rmse, color = as.factor(year)))+
+  geom_point()+
+  facet_wrap(~type)+
+  scale_x_discrete(limits = c("temp","o2", "full"), labels = c("temperature","oxygen", "full"))+
+  ylab("RMSE")+
+  scale_color_manual(values = palette_6)+
+  labs(color = "Year")+
+  theme_bw()
+dev.off()
+
+resids%>%
+  filter(model == "temp")%>%
+  ggplot(aes(x = O2_mgL, y = resids))+
+  geom_point()
+```
+
+
+```{r}
+full = read.csv("predictions_full_restart_TRUE.csv")
+temp = read.csv("predictions_temp_restart_TRUE.csv")
+o2 = read.csv("predictions_o2_restart_TRUE.csv")
+
+all = full%>%
+  mutate(model = "full")%>%
+  full_join(temp%>%mutate(model = "temp"))%>%
+  full_join(o2%>%mutate(model = "o2"))%>%
+  #full_join(sss%>%mutate(model = "sss"))%>% #leaving this out for presentation because it does really well....
+  mutate(Calendar_date=as.Date(Calendar_date))%>%
+  mutate(model = as.factor(model))
+
+
+obs <- CTD %>%
+  filter(!is.na(Conc))%>%
+  dplyr::select(Date, Conc)%>%
+  rename(datetime = Date)%>%
+  group_by(datetime)%>%
+  summarize(O2_mgL = mean(Conc))
+
+obs_plot =obs%>%
+  mutate(year = year(datetime))%>%
+  left_join(start_stop%>% mutate(year = year(start_all)), by = "year")%>%
+  filter(datetime>=start_all,
+         datetime<=stop_all)%>%
+  select(-start_all,-stop_all,-X)
+
+all%>%
+  filter(year%in%c(2018,2019,2020))%>%
+  ggplot(aes(x = Calendar_date, y = oxy))+
+  geom_line(aes(color = model))+
+  xlab("")+
+  ylab("Oxygen (mg/L)")+
+  facet_wrap(~year, scales = "free_x", nrow = 2)+
+  theme_bw()+
+  geom_point(aes(x = datetime, y = O2_mgL), data = obs_plot%>%filter(year%in%c(2018,2019,2020)))+
+  theme_bw()
+
+off_intervals = data.frame(start = off_starts$time,end = c(off_ends$time,as.Date("2020-12-31")), year = year(off_starts$time), int_num = seq(1:22))
+off_intervals$end[off_intervals$end == as.Date("2019-04-30")]<-"2018-09-01"
+
+obs_plot =obs%>%
+  mutate(year = year(datetime))%>%
+  left_join(start_stop%>% mutate(year = year(start_all)), by = "year")%>%
+  filter(datetime>=start_all,
+         datetime<=stop_all)%>%
+  left_join(off_intervals)%>%
+  filter(datetime>=start, datetime<=end)%>%
+  filter(year%in%c(2018,2019,2020))%>%
+  select(-start_all,-stop_all,-X)%>%
+  filter(int_num != 16)
+obs_plot$int_num = paste0(obs_plot$start," to ",obs_plot$end)
+  
+all2 = all%>%
+  left_join(off_intervals)%>%
+  filter(Calendar_date>=start, Calendar_date<=end,
+         year%in%c(2018,2019,2020),
+         int_num !=16)
+
+all2$int_num = paste0(all2$start," to ",all2$end)
+all2$oxy[all2$Calendar_date<=all2$start]<- NA
+
+int_names = c("2018","2018","2019","2019","2019","2020")
+names(int_names) = unique(all2$int_num)
+
+palette <- c("#e29578ff","#006d77ff", "grey20")
+
+jpeg("timeseries_off_periods.jpg", width = 8, height = 3, units = "in", res = 300)
+all2%>%
+  ggplot(aes(x = Calendar_date, y = oxy))+
+  geom_line(aes(color = model))+
+  xlab("")+
+  ylab("Oxygen (mg/L)")+
+  facet_grid(~int_num, scales = "free_x", space = "free_x", labeller = labeller(int_num = int_names))+
+  geom_point(aes(x = datetime, y = O2_mgL), data = obs_plot)+
+  scale_color_manual(limits = c("temp","o2", "full"), 
+                     labels = c("temperature-only","oxygen-only", "full model"),
+                     values = palette)+
+  theme_bw()+
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%e %b", minor_breaks = "1 week")+
+  labs(color = "Model")
+dev.off()
+```
+
+
+
+
+
+
+OLD CODE
 
 Run forecasts!
 ```{r}

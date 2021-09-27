@@ -1,0 +1,429 @@
+---
+title: "DO intervals"
+author: "Abby Lewis"
+date: "8/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(rLakeAnalyzer)
+```
+
+```{r}
+# Load in CTD data
+ctd <- read.csv("../../DO_modeling_data/CTD_final_2013_2020.csv")
+
+# Load in bathymetry data
+vol <- read_csv("../../DO_modeling_data/FCR Bathymetry.csv")
+colnames(vol) <- c("Depth_m","Volume_L","SA_m2")
+
+# Create a dataframe of oxygenation interval dates
+turnover <- read_csv("../../DO_modeling_data/TurnoverDates_22Oct18.csv")
+turnover <- turnover %>%
+  mutate(Date_turnover = as.Date(turnover$Date, format = "%m/%d/%y"))%>%
+  dplyr::select(-Date)
+intGuide <- read_csv("../../DO_modeling_data/Hox_schedule_ungrouped.csv") %>%
+  mutate(Year=year(Start),
+         Start = as.Date(Start),
+         End = as.Date(End)) %>%
+  left_join(turnover %>% dplyr::select(-For2018,-Time)) %>%
+  filter(Start<Date_turnover)
+intGuide$End[is.na(intGuide$End)] <- intGuide$Date_turnover[is.na(intGuide$End)]
+intGuide$End[intGuide$End>intGuide$Date_turnover] <- intGuide$Date_turnover[intGuide$End>intGuide$Date_turnover]
+intGuide$Days = as.numeric(difftime(intGuide$End, intGuide$Start), units = "days")
+```
+
+Creating a dataset that is all of the CTD data but only at depths from bathymetry
+```{r}
+dt1 <- ctd
+dt1$Date <- as.POSIXct(dt1$Date)
+dt1_culled <- dt1 %>%
+  filter(Site == 50 & Reservoir == "FCR" & !is.na(DO_mgL))
+
+depths <- vol$Depth_m
+# (Depths Can be changed as necessary)
+df.final2<-dt1_culled %>% group_by(Date) %>% slice(which.min(abs(as.numeric(Depth_m) - depths[1]))) #Create a new dataframe
+df.final2$Depth_m <- depths[1]
+for (j in 2:length(depths)){ #loop through all depths and add the closest values to the final dataframe
+  ctd_atThisDepth <- dt1_culled %>% group_by(Date) %>% slice(which.min(abs(as.numeric(Depth_m) - depths[j])))
+  ctd_atThisDepth$Depth_m <- depths[j]
+  df.final2 <- rbind(df.final2,ctd_atThisDepth)
+}
+
+thermo <- df.final2 %>%
+  arrange(Date) %>%
+  summarize(meta_bottom = meta.depths(Temp_C, Depth_m)[2])
+mean(thermo$meta_bottom, na.rm = T) #5.31
+thermo$meta_bottom<- 6 #Using constant thermocline depth
+```
+
+Creating a dataframe based upon the CTD data that calculates the volume-weighted hypolimnetic DO concentrations
+```{r}
+vw <- df.final2 %>%
+  filter(as.Date(Date)!=as.Date("2017-07-06")) %>% ### WHy?????
+  group_by(Date) %>%
+  left_join(thermo, by = "Date") %>%
+  mutate(Thermocline = meta_bottom) %>% 
+  ungroup() %>%
+  left_join(vol, by = "Depth_m")%>%
+  mutate(DO_Weighted = DO_mgL*Volume_L,
+         TP_Weighted = Temp_C*Volume_L) %>%
+  filter(Depth_m >= Thermocline,) %>%
+  group_by(Date) %>%
+  summarize(
+    thermo_depth = unique(Thermocline),
+    Vol_Weighted_DO = sum(DO_Weighted),
+    hypoVolume = sum(Volume_L),
+    Conc = Vol_Weighted_DO/hypoVolume,
+    Temp = sum(TP_Weighted)/hypoVolume,
+    Temp_sed = last(Temp_C),
+    Chla_ugL = mean(Chla_ugL),
+    SA_m2 = mean(SA_m2))
+write.csv(vw, "../../DO_modeling_data/vol_weighted_do_fcr_28Aug.csv")
+```
+
+
+This is necessary REGARDLESS of whether you are doing weekly or whole-interval
+```{r}
+vw2 <- vw
+
+#Creates the dataframe with background information for each interval (start, end, SSS, etc)
+
+vw2$ClosestStart <- NA
+vw2$DaysSinceStart <- NA
+vw2$Date <- as.Date(vw2$Date)
+vw2$SSS <- NA
+vw2$scfm <- NA
+vw2$IntervalStart <- as.Date(NA)
+vw2$IntervalEnd <- as.Date(NA)
+for(i in seq(1:nrow(vw2))){
+  distance <- as.numeric(difftime(vw2$Date[i], intGuide$Start, units = "days"))
+  distance[distance<0] <- NA
+  if(all(is.na(distance))){
+    vw2$ClosestStart[i] <- 0
+  } else {
+      vw2$ClosestStart[i] <- which.min(distance)
+      vw2$IntervalStart[i] <- intGuide$Start[which.min(distance)]
+      vw2$IntervalEnd[i] <- intGuide$End[which.min(distance)]
+      vw2$DaysSinceStart[i] <- min(distance, na.rm = TRUE)
+      vw2$SSS[i] <- as.character(intGuide$SSS[which.min(distance)])
+      vw2$scfm[i] <- intGuide$scfm[which.min(distance)]
+      distanceEnd <- as.numeric(difftime(vw2$Date[i], intGuide$End, units = "days"))
+      distanceEnd[distanceEnd<=0] <- NA
+      if(min(distance, na.rm = TRUE) > min(distanceEnd, na.rm = TRUE)) { #Getting rid of points after the end of the season
+            vw2$ClosestStart[i] <- NA
+            vw2$DaysSinceStart[i] <- NA
+            vw2$SSS[i] <- NA
+            vw2$scfm[i] <- NA
+            vw2$IntervalStart[i] <- NA
+            vw2$IntervalEnd[i] <- NA
+    }
+  }
+}
+
+#Creates an additional dataframe to join with vw2. 
+#fixEndpoints has only the end dates and it adds them at the END of the correct interval, since they will otherwise be processed only as the beginning point of the next one
+
+fixEndpoints <- vw2 %>%
+  filter(DaysSinceStart == 0)
+for(i in seq(1:nrow(fixEndpoints))){
+  distance <- as.numeric(difftime(fixEndpoints$Date[i], intGuide$Start, units = "days"))
+  distance[distance<0] <- NA
+  distance[distance == fixEndpoints$DaysSinceStart[i]] <- NA
+  if(all(is.na(distance))){
+    fixEndpoints$ClosestStart[i] <- 0
+  } else {
+      fixEndpoints$ClosestStart[i] <- which.min(distance)
+      fixEndpoints$IntervalStart[i] <- intGuide$Start[which.min(distance)]
+      fixEndpoints$IntervalEnd[i] <- intGuide$End[which.min(distance)]
+      fixEndpoints$DaysSinceStart[i] <- min(distance, na.rm = TRUE)
+      fixEndpoints$SSS[i] <- as.character(intGuide$SSS[which.min(distance)])
+      fixEndpoints$scfm[i] <- intGuide$scfm[which.min(distance)]
+      distanceEnd <- as.numeric(difftime(fixEndpoints$Date[i], intGuide$End, units = "days"))
+      distanceEnd[distanceEnd<=0] <- NA
+      if(min(distance, na.rm = TRUE) > min(distanceEnd, na.rm = TRUE)) {
+            fixEndpoints$ClosestStart[i] <- NA
+            fixEndpoints$DaysSinceStart[i] <- NA
+            fixEndpoints$SSS[i] <- NA
+            fixEndpoints$scfm[i] <- NA
+            fixEndpoints$IntervalStart[i] <- NA
+            fixEndpoints$IntervalEnd[i] <- NA
+    }
+  }
+}
+vw2 = vw2 %>%
+  full_join(fixEndpoints)%>%
+  mutate(Year = year(Date))%>%
+  left_join(turnover, by = "Year") %>%
+  filter(Date<Date_turnover) %>%
+  dplyr::select(-Time,-For2018,-Year)
+
+vw2 %>%
+  summarize(max= max(Conc, na.rm = TRUE),
+            min = min(Conc, na.rm = TRUE))
+  
+```
+
+
+This is ONLY for weekly (two week intervals)
+```{r}
+
+vw2_week <- vw2
+#This section sets it up to divide into weeks
+vw2_week$WeeksSinceStart <- floor(vw2_week$DaysSinceStart/14)
+repStartEnd <- vw2_week %>%
+  filter(DaysSinceStart !=0, 
+         DaysSinceStart %% 14 == 0)%>%
+  mutate(WeeksSinceStart = WeeksSinceStart - 1) #Duplicate endpoints
+vw2_week = vw2_week %>%
+  full_join(repStartEnd)
+
+slope_temp_wk <- vw2_week %>%
+  filter(ClosestStart>0)%>%
+  group_by(ClosestStart, WeeksSinceStart) %>%
+  summarize(
+    temp = mean(Temp),
+    Date_start = min(Date),
+    Date_end = max(Date),
+    IntStart = unique(IntervalStart),
+    IntEnd = unique(IntervalEnd),
+    Observations = n(),
+    mg_L_day_O2 = mean(scfm)*50*1000000/mean(hypoVolume),
+    SSS = unique(SSS),
+    temp_sed = mean(Temp),
+    temp_init = first(Temp),
+    temp_final = last(Temp),
+    o2_init = first(Conc),
+    o2_mean = mean(Conc),
+    dist_turnover =as.numeric(difftime(unique(Date_turnover),IntStart, units = "days")),
+    thermo_start = first(thermo_depth),
+    thermo_end = last(thermo_depth),
+    thermo_mean = mean(thermo_depth)
+    )
+
+slopes_wk <- vw2_week%>%
+  filter(ClosestStart>0)%>%
+  group_by(ClosestStart, WeeksSinceStart) %>%
+  do(intercept = as.numeric(lm(Conc~ Date, data = .)$coefficients[1]),
+     slope = as.numeric(lm(Conc~ Date, data = .)$coefficients[2]))
+slope_temp_wk = slope_temp_wk %>%
+  left_join(slopes_wk, by = c("ClosestStart", "WeeksSinceStart")) %>%
+  filter(Date_start != IntEnd) %>%
+  mutate(slope = unlist(slope),
+         intercept = unlist(intercept),
+         slope_O2 = slope - mg_L_day_O2)
+slope_temp_wk_2obs <- slope_temp_wk %>%
+  filter(Observations >=2)
+write.csv(slope_temp_wk_2obs, "slope_temp_wk_2obs.csv", row.names = F)
+```
+
+Months
+```{r}
+
+vw2_week <- vw2
+#This section sets it up to divide into weeks
+vw2_week$WeeksSinceStart <- floor(vw2_week$DaysSinceStart/30)
+repStartEnd <- vw2_week %>%
+  filter(DaysSinceStart !=0, 
+         DaysSinceStart %% 30 == 0)%>%
+  mutate(WeeksSinceStart = WeeksSinceStart - 1) #Duplicate endpoints
+vw2_week = vw2_week %>%
+  full_join(repStartEnd)
+
+slope_temp_wk <- vw2_week %>%
+  filter(ClosestStart>0)%>%
+  group_by(ClosestStart, WeeksSinceStart) %>%
+  summarize(
+    temp = mean(Temp),
+    Date_start = min(Date),
+    Date_end = max(Date),
+    IntStart = unique(IntervalStart),
+    IntEnd = unique(IntervalEnd),
+    Observations = n(),
+    mg_L_day_O2 = mean(scfm)*50*1000000/mean(hypoVolume),
+    SSS = unique(SSS),
+    temp_sed = mean(Temp),
+    temp_init = first(Temp),
+    temp_final = last(Temp),
+    o2_init = first(Conc),
+    o2_mean = mean(Conc),
+    dist_turnover =as.numeric(difftime(unique(Date_turnover),IntStart, units = "days")),
+    thermo_start = first(thermo_depth),
+    thermo_end = last(thermo_depth),
+    thermo_mean = mean(thermo_depth)
+    )
+
+slopes_wk <- vw2_week%>%
+  filter(ClosestStart>0)%>%
+  group_by(ClosestStart, WeeksSinceStart) %>%
+  do(intercept = as.numeric(lm(Conc~ Date, data = .)$coefficients[1]),
+     slope = as.numeric(lm(Conc~ Date, data = .)$coefficients[2]))
+slope_temp_wk = slope_temp_wk %>%
+  left_join(slopes_wk, by = c("ClosestStart", "WeeksSinceStart")) %>%
+  filter(Date_start != IntEnd) %>%
+  mutate(slope = unlist(slope),
+         intercept = unlist(intercept),
+         slope_O2 = slope - mg_L_day_O2)
+slope_temp_month_3obs <- slope_temp_wk %>%
+  filter(Observations >=3)
+write.csv(slope_temp_month_3obs, "slope_temp_month_3obs.csv", row.names = F)
+```
+
+
+
+```{r}
+#This does the same thing, but for intervals
+vw2_int <- vw2
+
+slope_temp_int <- vw2_int %>%
+  filter(ClosestStart>0)%>%
+  group_by(ClosestStart) %>%
+  summarize(
+    temp = mean(Temp),
+    Date_start = min(Date),
+    Date_end = max(Date),
+    IntStart = unique(IntervalStart),
+    IntEnd = unique(IntervalEnd),
+    Observations = n(),
+    mg_L_day_O2 = mean(scfm)*50*1000000/mean(hypoVolume),
+    SSS = unique(SSS),
+    o2_init = first(Conc),
+    o2_mean = mean(Conc),
+    temp_sed = mean(Temp),
+    temp_init = first(Temp),
+    temp_final = last(Temp))
+slopes_int <- vw2_int%>%
+  filter(ClosestStart>0)%>%
+  group_by(ClosestStart) %>%
+  do(intercept = as.numeric(lm(Conc~ Date, data = .)$coefficients[1]),
+     slope = as.numeric(lm(Conc~ Date, data = .)$coefficients[2]))
+slope_temp_int = slope_temp_int %>%
+  left_join(slopes_int, by = "ClosestStart") %>%
+  filter(Date_start != IntEnd) %>%
+  mutate(slope = unlist(slope),
+         intercept = unlist(intercept),
+         slope_O2 = slope - mg_L_day_O2,
+         IntervalLength = as.numeric(difftime(Date_end,Date_start, units = "days")))
+slope_temp_int_3obs =slope_temp_int %>%
+  filter(Observations>=3,
+         Date_start != Date_end-1)
+write.csv(slope_temp_int_3obs, "slope_temp_int_3obs.csv", row.names = F)
+```
+
+
+```{r}
+lim_bot <- min(-slope_temp_wk_2obs$slope_O2)
+lim_top <- max(-slope_temp_wk_2obs$slope_O2)
+
+jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+
+g0 <- vw2_week%>%
+  filter(ClosestStart>0) 
+
+slopes_for_plot <- slope_temp_wk_2obs %>%
+  filter(!is.na(slope)) %>%
+  mutate(y0 = slope*as.numeric(Date_start)+intercept,
+         y1 = slope*as.numeric(Date_end)+intercept,
+         y1_o2 = y0 + slope_O2*as.numeric(Date_end-Date_start),
+         Year = year(Date_start))
+
+g0 %>%
+  mutate(Year = year(Date))%>%
+  ggplot(aes(x = as_datetime(Date),y = Conc))+
+  geom_segment(aes(x = as_datetime(Date_start), 
+                 y = y0, 
+                 xend = as_datetime(Date_end), 
+                 yend = y1, color = -slope_O2), data = slopes_for_plot,
+             lwd = 3)+
+  scale_color_gradientn(colours=jet.colors(7), limits = c(lim_bot,lim_top),na.value = "white")+
+  geom_point(size = 2, pch = 1, alpha = 0.5)+
+  #geom_vline(xintercept = on)+
+  #geom_vline(xintercept = off,lty=2)+
+  facet_grid(cols = vars(Year), scales = "free_x",space = "free_x")+
+  ylab("Average hypolimnetic DO (mg/L)")+
+  xlab("")+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.ticks = element_blank(),
+        text = element_text(size = 13))
+```
+
+
+```{r}
+lim_bot <- min(-slope_temp_month_3obs$slope_O2)
+lim_top <- max(-slope_temp_month_3obs$slope_O2)
+
+jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+
+g0 <- vw2_week%>%
+  filter(ClosestStart>0) 
+
+slopes_for_plot <- slope_temp_month_3obs %>%
+  filter(!is.na(slope)) %>%
+  mutate(y0 = slope*as.numeric(Date_start)+intercept,
+         y1 = slope*as.numeric(Date_end)+intercept,
+         y1_o2 = y0 + slope_O2*as.numeric(Date_end-Date_start),
+         Year = year(Date_start))
+
+g0 %>%
+  mutate(Year = year(Date))%>%
+  ggplot(aes(x = as_datetime(Date),y = Conc))+
+  geom_segment(aes(x = as_datetime(Date_start), 
+                 y = y0, 
+                 xend = as_datetime(Date_end), 
+                 yend = y1, color = -slope_O2), data = slopes_for_plot,
+             lwd = 3)+
+  scale_color_gradientn(colours=jet.colors(7), limits = c(lim_bot,lim_top),na.value = "white")+
+  geom_point(size = 2, pch = 1, alpha = 0.5)+
+  #geom_vline(xintercept = on)+
+  #geom_vline(xintercept = off,lty=2)+
+  facet_grid(cols = vars(Year), scales = "free_x",space = "free_x")+
+  ylab("Average hypolimnetic DO (mg/L)")+
+  xlab("")+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.ticks = element_blank(),
+        text = element_text(size = 13))
+```
+
+
+```{r}
+lim_bot <- min(-slope_temp_int_3obs$slope_O2)
+lim_top <- max(-slope_temp_int_3obs$slope_O2)
+
+jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+
+g0 <- vw2_week%>%
+  filter(ClosestStart>0) 
+
+slopes_for_plot <- slope_temp_int_3obs %>%
+  filter(!is.na(slope)) %>%
+  mutate(y0 = slope*as.numeric(Date_start)+intercept,
+         y1 = slope*as.numeric(Date_end)+intercept,
+         y1_o2 = y0 + slope_O2*as.numeric(Date_end-Date_start),
+         Year = year(Date_start))
+
+g0 %>%
+  mutate(Year = year(Date))%>%
+  ggplot(aes(x = as_datetime(Date),y = Conc))+
+  geom_segment(aes(x = as_datetime(Date_start), 
+                 y = y0, 
+                 xend = as_datetime(Date_end), 
+                 yend = y1, color = -slope_O2), data = slopes_for_plot,
+             lwd = 3)+
+  scale_color_gradientn(colours=jet.colors(7), limits = c(lim_bot,lim_top),na.value = "white")+
+  geom_point(size = 2, pch = 1, alpha = 0.5)+
+  #geom_vline(xintercept = on)+
+  #geom_vline(xintercept = off,lty=2)+
+  facet_grid(cols = vars(Year), scales = "free_x",space = "free_x")+
+  ylab("Average hypolimnetic DO (mg/L)")+
+  xlab("")+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.ticks = element_blank(),
+        text = element_text(size = 13))
+```
+

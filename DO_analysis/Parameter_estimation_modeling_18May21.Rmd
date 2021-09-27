@@ -49,9 +49,30 @@ avg_hypoVolume<-unlist(avgs[3])
 CTD$hypoVolume<-avg_hypoVolume
 realDrivers=T
 
+vol <- read_csv("../DO_modeling_data/FCR Bathymetry.csv")
+Depth_m = c(6.2,8,9)
+Volume_L = c(sum(vol$Volume_L[vol$Depth_m>=6.2&vol$Depth_m<8]),sum(vol$Volume_L[vol$Depth_m>=8&vol$Depth_m<9]),sum(vol$Volume_L[vol$Depth_m>=9]))
+vol = tibble(Depth_m,Volume_L)
+hypo_vol = sum(vol$Volume_L)
+metals_vw = metals%>%
+  filter(Depth_m>5)%>%
+  left_join(vol)%>%
+  mutate(Fe_g = TFe_mgL * Volume_L)%>%
+  group_by(DateTime)%>%
+  summarize(total_Fe_g = sum(Fe_g)/hypo_vol)%>%
+  mutate(Date = as.Date(DateTime))%>%
+  group_by(Date)%>%
+  summarize(total_Fe_g = mean(total_Fe_g))
+
+
+model_name = "sss" # full, temp, o2, sss
+model = sss_model #O2_model, temp_model, no_temp_model, or sss_model
+inc_metals = F
+restart = F
+
 start_2013 = start_all[year(start_all)==2013]
 stop_2013 = stop_all[year(stop_all)==2013]
-inputs_2013 <- format_model_inputs(start_2013,stop_2013,CTD,SSS,obs,today = stop_2013, realDrivers = realDrivers)
+inputs_2013 <- format_model_inputs(start_2013,stop_2013,CTD,SSS,obs,metals_vw,today = stop_2013, realDrivers = realDrivers, model_name = model_name, inc_metals=inc_metals)
 dates = data.frame(seq(start_2013,stop_2013,by = "days"))
 colnames(dates) <- "datetime"
 obs_2013 = dates %>%
@@ -59,7 +80,7 @@ obs_2013 = dates %>%
 
 start_2014 = start_all[year(start_all)==2014]
 stop_2014 = stop_all[year(stop_all)==2014]
-inputs_2014 <- format_model_inputs(start_2014,stop_2014,CTD,SSS,obs,today = stop_2014, realDrivers = realDrivers)
+inputs_2014 <- format_model_inputs(start_2014,stop_2014,CTD,SSS,obs,metals_vw,today = stop_2014, realDrivers = realDrivers, model_name = model_name, inc_metals=inc_metals)
 dates = data.frame(seq(start_2014,stop_2014,by = "days"))
 colnames(dates) <- "datetime"
 obs_2014 = dates %>%
@@ -67,7 +88,7 @@ obs_2014 = dates %>%
 
 start_2015 = start_all[year(start_all)==2015]
 stop_2015 = stop_all[year(stop_all)==2015]
-inputs_2015 <- format_model_inputs(start_2015,stop_2015,CTD,SSS,obs,today = stop_2015, realDrivers = realDrivers)
+inputs_2015 <- format_model_inputs(start_2015,stop_2015,CTD,SSS,obs,metals_vw,today = stop_2015, realDrivers = realDrivers, model_name = model_name, inc_metals=inc_metals)
 dates = data.frame(seq(start_2015,stop_2015,by = "days"))
 colnames(dates) <- "datetime"
 obs_2015 = dates %>%
@@ -75,26 +96,28 @@ obs_2015 = dates %>%
 
 start_2016 = start_all[year(start_all)==2016]
 stop_2016 = stop_all[year(stop_all)==2016]
-inputs_2016 <- format_model_inputs(start_2016,stop_2016,CTD,SSS,obs,today = stop_2016, realDrivers = realDrivers)
+inputs_2016 <- format_model_inputs(start_2016,stop_2016,CTD,SSS,obs,metals_vw,today = stop_2016, realDrivers = realDrivers, model_name = model_name, inc_metals=inc_metals)
 dates = data.frame(seq(start_2016,stop_2016,by = "days"))
 colnames(dates) <- "datetime"
 obs_2016 = dates %>%
   left_join(obs)
+
+
 ```
 
 ```{r}
 param_est_fun <- function(parms){
   print(parms)
-  test_2013 <- predict_no_enkf(start_2013,stop_2013,obs,drivers = inputs_2013,parms = parms, model = O2_model)
+  test_2013 <- predict_no_enkf(start_2013,stop_2013,obs,drivers = inputs_2013,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
   rmse_2013 <- rmse(obs_2013$O2_mgL[!is.na(obs_2013$O2_mgL)], test_2013$Y[!is.na(obs_2013$O2_mgL)])
   
-  test_2014 <- predict_no_enkf(start_2014,stop_2014,obs,drivers = inputs_2014,parms = parms, model = O2_model)
+  test_2014 <- predict_no_enkf(start_2014,stop_2014,obs,drivers = inputs_2014,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
   rmse_2014 <- rmse(obs_2014$O2_mgL[!is.na(obs_2014$O2_mgL)], test_2014$Y[!is.na(obs_2014$O2_mgL)])
     
-  test_2015 <- predict_no_enkf(start_2015,stop_2015,obs,drivers = inputs_2015,parms = parms, model = O2_model)
+  test_2015 <- predict_no_enkf(start_2015,stop_2015,obs,drivers = inputs_2015,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
   rmse_2015 <- rmse(obs_2015$O2_mgL[!is.na(obs_2015$O2_mgL)], test_2015$Y[!is.na(obs_2015$O2_mgL)])
   
-  test_2016 <- predict_no_enkf(start_2016,stop_2016,obs,drivers = inputs_2016,parms = parms, model = O2_model)
+  test_2016 <- predict_no_enkf(start_2016,stop_2016,obs,drivers = inputs_2016,parms = parms, model = model, restart = restart, inc_metals = inc_metals)
   rmse_2016 <- rmse(obs_2016$O2_mgL[!is.na(obs_2016$O2_mgL)], test_2016$Y[!is.na(obs_2016$O2_mgL)])
     
   rmses = c(rmse_2013, rmse_2014, rmse_2015, rmse_2016)
@@ -105,8 +128,10 @@ param_est_fun <- function(parms){
 ```
 
 ```{r}
-par.set = makeNumericParamSet(len = 4L, id = "parms",
-                              lower = c(0,1.06,.4,1.5), upper = c(2,1.09,1.7,4.5),vector = TRUE) 
+par.set = makeNumericParamSet(len = 2L, id = "parms",
+                              lower = c(0,1), upper = c(10,5),vector = TRUE)
+#Theta range should be 1.02, 1.3
+#KO2 Range should be 0-4
 
 objective.fun = makeSingleObjectiveFunction(name = "objective function", 
                                            id = NULL,
@@ -119,7 +144,9 @@ objective.fun = makeSingleObjectiveFunction(name = "objective function",
                                            vectorized = F, 
                                            constraint.fn = NULL)
 
-cmaes(objective.fun, start.point = c(.7,1.08,.2,3))
+cmaes(objective.fun, start.point = c(.7,3))
+#theta start point: 1.08
+#Ko2 start point: 1.5
 ```
 
 Example
@@ -130,7 +157,7 @@ fn <- makeSingleObjectiveFunction(
   fn = function(x) x[1]^2 + x[2]^2,
   par.set = makeNumericParamSet(
   len = 2L, id = "x",
-  lower = c(-10, -10), upper = c(10, 10),
+  lower = c(-10, 0), upper = c(10, 0),
   vector = TRUE
   ),
   tags = "unimodal",

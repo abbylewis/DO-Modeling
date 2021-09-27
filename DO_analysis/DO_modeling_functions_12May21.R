@@ -167,7 +167,7 @@ run_do_hindcast <- function(inputs, obs, today, n_days = 14, model_name = "norma
 #' Function to format inputs for modeling
 #' 
 
-format_model_inputs <- function(start, stop, CTD, SSS, obs, today, n_days = 14, realDrivers){
+format_model_inputs <- function(start, stop, CTD, SSS, obs, metals_vw, today, realDrivers, model_name, inc_metals){
   dates = data.frame(seq(start,stop,by = "days"))
   colnames(dates) <- "Date"
   inputs = dates %>%
@@ -175,9 +175,13 @@ format_model_inputs <- function(start, stop, CTD, SSS, obs, today, n_days = 14, 
                 dplyr::select(Date,Conc,Temp,hypoVolume,thermo_depth,Chla_ugL,SA_m2), by = "Date")%>%
     left_join(SSS %>% 
                 dplyr::select(time, scfm), by = c("Date"="time"))%>%
+    left_join(metals_vw, by = c("Date"))%>%
     arrange(Date)
   if(all(is.na(inputs$Chla_ugL))){
     inputs$Chla_ugL<-1
+  }
+  if(inc_metals==F){
+    inputs$total_Fe_g=0
   }
   inputs = inputs%>%
     group_by(Date)%>%
@@ -187,7 +191,8 @@ format_model_inputs <- function(start, stop, CTD, SSS, obs, today, n_days = 14, 
               thermo_depth = mean(thermo_depth),
               scfm = mean(scfm),
               Chla = mean(Chla_ugL),
-              SA = mean(SA_m2))
+              SA = mean(SA_m2),
+              Fe = mean(total_Fe_g)/1000)
   obs = obs%>%
     filter(datetime<=today)
   if(realDrivers == F){
@@ -201,22 +206,28 @@ format_model_inputs <- function(start, stop, CTD, SSS, obs, today, n_days = 14, 
            scfm = ifelse(Date>=as.Date("2013-05-15"),scfm,0),
            SSS_add_conc = scfm*50*1000000/hypoVolume,
            Chla = na.approx(Chla, rule = 2),
-           SA = na.approx(SA, rule = 2))%>%
+           SA = na.approx(SA, rule = 2),
+           Fe = na.approx(Fe, rule = 2))%>%
     filter(Date<=stop, 
-           Date>=start,
-           Date<=today+n_days)
+           Date>=start)
   if(realDrivers == F){
     inputs$Temp[inputs$Date > max(obs$datetime)]<- inputs$Temp[inputs$Date == max(obs$datetime)]+temp_slope*seq(1,n_days)
   }
-  simulation_time <- as.numeric(difftime(min(today+n_days, stop), start, unit = "days")+1) #days
+  simulation_time <- as.numeric(difftime(stop, start, unit = "days")+1) #days
   #Assemble driver data
   model_dates = seq.Date(from = start, to = stop, by = "days")
   model_inputs <- data.frame(datetime = inputs$Date,
                              SSS = inputs$SSS_add_conc,
                              temp = inputs$Temp,
-                             O2_mgL = inputs$Conc) %>% #included for temp and SSS models (o2 = average o2)
+                             O2_mgL = inputs$Conc,
+                             Fe_g = inputs$Fe) %>% #included for temp and SSS models (o2 = average o2)
     dplyr::filter(as.Date(datetime) %in% model_dates)%>%
     select(-datetime)
+  avgs <- calc_avg(start,stop,CTD,SSS)
+  avg_temp<-unlist(avgs[1])
+  avg_o2<-unlist(avgs[2])
+  if(model_name == "temp"){model_inputs$O2_mgL <- avg_o2} #this is unnecessary because the model does not include these drivers
+  if(model_name == "o2"){model_inputs$temp <- avg_temp}
   return(model_inputs)
 }
 
@@ -230,17 +241,24 @@ format_model_inputs <- function(start, stop, CTD, SSS, obs, today, n_days = 14, 
 #' @param parms parameters
 #' @param model model name
 
-predict_no_enkf <- function(start, stop, obs, drivers, parms, model){
+predict_no_enkf <- function(start, stop, obs, drivers, parms, model,restart, inc_metals){
   o2_init = obs$O2_mgL[min(which(!is.na(obs$O2_mgL) & obs$datetime>=start & obs$datetime<=stop))]
   output = c(o2_init)
   for (t in 2:nrow(drivers)){
+    prev_state = output[t-1]
+    if(restart == T){
+      if ((start+t-2) %in% obs$datetime){
+        prev_state = obs$O2_mgL[obs$datetime==start+(t-2)]
+      }
+    }
     model_output_temp = model(times = t,
-                              states = output[t-1],
+                              states = prev_state,
                               parms = parms,
-                              inputs = drivers[t-1,])
+                              inputs = drivers[t-1,],
+                              inc_metals = inc_metals)
     model_output<-as.data.frame(t(unlist(model_output_temp)))
-    colnames(model_output)<-c("O2_mgL","Two","Three","Four","Five")
-    output[t] <- model_output$O2_mgL+output[t-1]
+    colnames(model_output)[1]<-c("O2_mgL")
+    output[t] <- model_output$O2_mgL+prev_state
   }
   list(Y = output, dates = NA, drivers = drivers, R = NA, obs = obs, state_sd = NA)
 }

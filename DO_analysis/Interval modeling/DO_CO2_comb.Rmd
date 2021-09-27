@@ -1,0 +1,105 @@
+---
+title: "DO and CO2 combined"
+author: "Abby Lewis"
+date: "9/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+wk = read.csv("slope_temp_wk_2obs.csv")
+int = read.csv("slope_temp_int_3obs.csv")
+mo = read.csv("slope_temp_month_3obs.csv")
+
+jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+
+mo%>%
+  filter(year(Date_start) != 2019)%>%
+  ggplot(aes(x = slope_O2/(2*15.999), y = slope_co2/1000, color = temp))+
+  geom_point()+
+  scale_color_gradientn(colours=jet.colors(7))+
+  theme_bw()
+
+int%>%
+  filter(year(Date_start) != 2019)%>%
+  ggplot(aes(x = slope_O2, y = slope_co2, color = o2_init))+
+  geom_point()+
+  scale_color_gradientn(colours=jet.colors(7))+
+  theme_bw()
+
+wk%>%
+  filter(year(Date_start) != 2019)%>%
+  ggplot(aes(x = slope_O2, y = slope_co2, color = o2_init))+
+  geom_point()+
+  scale_color_gradientn(colours=jet.colors(7))+
+  theme_bw()
+
+mo$RQ = (mo$slope_co2/1000)/((-mo$slope_O2)/(2*15.999))
+int$RQ = (int$slope_co2/1000)/((-int$slope_O2)/(2*15.999))
+wk$RQ = (wk$slope_co2/1000)/((-wk$slope_O2)/(2*15.999))
+boxplot(mo$RQ[mo$o2_mean>.6])
+
+library(combinat)
+library(MuMIn)
+dataset = mo
+potential_drivers = c("temp","o2_mean","o2_init","mg_L_day_O2", "doc_mean","doc_init","Fe_init","Fe_mean")
+data_for_pca = na.exclude(dataset[c("slope_co2",potential_drivers)])
+pca = prcomp(na.exclude(data_for_pca[potential_drivers]), center = T, scale. = T)
+summary(pca)
+library(ggfortify)
+jpeg("pca.jpg", width = 5, height = 4, units = "in", res = 300)
+p = autoplot(pca, data = data_for_pca, colour = "slope_co2", loadings = TRUE, loadings.label = TRUE, loadings.label.size = 3)
+p
+dev.off()
+p
+
+responses = c("RQ","slope_co2","slope_O2")
+drivers = c(paste(potential_drivers, collapse = " "))
+pairs(dataset[potential_drivers])
+cor(dataset[potential_drivers], use = "complete.obs")
+for(response in responses){
+  if(sum(complete.cases(dataset))>0){
+    model = lm(as.formula(paste0(response, "~", paste0(potential_drivers, collapse = ":"))), data = dataset)
+    AICcs = c(AICc(model))
+  } else{
+    AICcs = c(NA)
+  }
+  for (num_drivers in 1:(length(potential_drivers)-1)){
+    driver_matrix = combn(potential_drivers,num_drivers)
+    for(option_num in 1:ncol(driver_matrix)){
+      if(sum(complete.cases(dataset[c(response,driver_matrix[,option_num])]))>0){
+        model = lm(as.formula(paste0(response, "~", paste0(driver_matrix[,option_num], collapse = ":"))), data = dataset)
+        AICcs = c(AICcs, AICc(model))
+      } else{
+        AICcs = c(AICcs, NA)
+      }
+      drivers = c(drivers, paste(driver_matrix[,option_num], collapse = " "))
+    }
+  }
+  if(response == responses[1]){
+    output = data.frame(drivers,AICcs)
+    colnames(output)=c("drivers",response)
+  } else{
+    output[response] = AICcs
+  }
+}
+
+for(response in responses){
+  best_val = min(output[response])
+  print(output$drivers[output[response]<=best_val+2])
+}
+
+output[which.min(output$slope_co2),]
+output[which.min(output$slope_O2),]
+
+mo%>%
+  ggplot(aes(x = Date_start, y = RQ))+
+  geom_point()
+```
+
+
