@@ -9,62 +9,92 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(lubridate)
+library(combinat)
+library(MuMIn)
+library(ggfortify)
+library(zoo)
 ```
 
+TO DO:
+- Calculate DIC if you are doing the pw method
+- Find what is causing negative co2 rates
+
 ```{r}
-wk = read.csv("slope_temp_wk_2obs.csv")
-int = read.csv("slope_temp_int_3obs.csv")
-mo = read.csv("slope_temp_month_3obs.csv")
+wk = read.csv("slope_temp_wk.csv")%>%
+  filter(o2_mean>1|mg_L_day_O2>0)
+int = read.csv("slope_temp_int.csv")%>%
+  filter(o2_mean>1|mg_L_day_O2>0,
+         difftime(Date_end,Date_start) > 14) #all of these qualifications are up for debate! Filtering to two weeks removes negative co2 slopes
+mo = read_csv("slope_temp_month.csv")%>%
+  filter(o2_mean>1|mg_L_day_O2>0)%>%
+  filter(difftime(Date_end,Date_start, units = "days") > 14)%>%
+  mutate(doc_init = na.approx(doc_init,as.Date(Date_start),na.rm = F),
+         doc_mean = na.approx(doc_mean,as.Date(Date_start),na.rm = F),
+         Fe_init = na.approx(Fe_init,as.Date(Date_start),na.rm = F),
+         Fe_mean = na.approx(Fe_mean,as.Date(Date_start),na.rm = F))
+
+wk$slope_do[wk$Observations_o2<3]<-NA
+wk$slope_O2[wk$Observations_o2<3]<-NA
+wk$slope_co2[wk$Observations_co2<3]<-NA
+wk$slope_dic[wk$Observations_co2<3]<-NA
+
+int$slope_do[int$Observations_o2<3]<-NA
+int$slope_O2[int$Observations_o2<3]<-NA
+int$slope_co2[int$Observations_co2<3]<-NA
+int$slope_dic[int$Observations_co2<3]<-NA
+
+mo$slope_do[mo$Observations_o2<3]<-NA
+mo$slope_O2[mo$Observations_o2<3]<-NA
+mo$slope_co2[mo$Observations_co2<3|mo$slope_co2>30]<-NA
+mo$slope_dic[mo$Observations_co2<3]<-NA
+
 
 jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
 
 mo%>%
-  filter(year(Date_start) != 2019)%>%
+  #filter(year(Date_start) != 2019)%>%
   ggplot(aes(x = slope_O2/(2*15.999), y = slope_co2/1000, color = temp))+
   geom_point()+
   scale_color_gradientn(colours=jet.colors(7))+
   theme_bw()
 
 int%>%
-  filter(year(Date_start) != 2019)%>%
-  ggplot(aes(x = slope_O2, y = slope_co2, color = o2_init))+
+  #filter(year(Date_start) != 2019)%>%
+  ggplot(aes(x = slope_O2, y = slope_co2, color = temp))+
   geom_point()+
   scale_color_gradientn(colours=jet.colors(7))+
   theme_bw()
 
 wk%>%
   filter(year(Date_start) != 2019)%>%
-  ggplot(aes(x = slope_O2, y = slope_co2, color = o2_init))+
+  ggplot(aes(x = slope_O2, y = slope_co2, color = temp))+
   geom_point()+
   scale_color_gradientn(colours=jet.colors(7))+
   theme_bw()
 
-mo$RQ = (mo$slope_co2/1000)/((-mo$slope_O2)/(2*15.999))
-int$RQ = (int$slope_co2/1000)/((-int$slope_O2)/(2*15.999))
-wk$RQ = (wk$slope_co2/1000)/((-wk$slope_O2)/(2*15.999))
+mo$RQ = (mo$pw_slope_co2/1000)/((-mo$pw_slope_o2_oxygenation)/(15.999))
+int$RQ = (int$slope_dic/1000)/((-int$slope_O2)/(15.999))
+wk$RQ = (wk$slope_dic/1000)/((-wk$slope_O2)/(15.999))
 boxplot(mo$RQ[mo$o2_mean>.6])
 
-library(combinat)
-library(MuMIn)
 dataset = mo
-potential_drivers = c("temp","o2_mean","o2_init","mg_L_day_O2", "doc_mean","doc_init","Fe_init","Fe_mean")
+potential_drivers = c("temp","o2_mean","o2_init","mg_L_day_O2", "doc_mean", "doc_init", "Fe_init", "Fe_mean", "schmidt_mean", "schmidt_min")
 data_for_pca = na.exclude(dataset[c("slope_co2",potential_drivers)])
 pca = prcomp(na.exclude(data_for_pca[potential_drivers]), center = T, scale. = T)
 summary(pca)
-library(ggfortify)
 jpeg("pca.jpg", width = 5, height = 4, units = "in", res = 300)
 p = autoplot(pca, data = data_for_pca, colour = "slope_co2", loadings = TRUE, loadings.label = TRUE, loadings.label.size = 3)
 p
 dev.off()
 p
 
-responses = c("RQ","slope_co2","slope_O2")
+responses = c("RQ","pw_slope_co2","pw_slope_o2_oxygenation")
 drivers = c(paste(potential_drivers, collapse = " "))
-pairs(dataset[potential_drivers])
-cor(dataset[potential_drivers], use = "complete.obs")
+#pairs(dataset[potential_drivers])
+#cor(dataset[potential_drivers], use = "complete.obs")
 for(response in responses){
   if(sum(complete.cases(dataset))>0){
-    model = lm(as.formula(paste0(response, "~", paste0(potential_drivers, collapse = ":"))), data = dataset)
+    model = lm(as.formula(paste0(response, "~", paste0(potential_drivers, collapse = "+"))), data = dataset)
     AICcs = c(AICc(model))
   } else{
     AICcs = c(NA)
@@ -73,7 +103,7 @@ for(response in responses){
     driver_matrix = combn(potential_drivers,num_drivers)
     for(option_num in 1:ncol(driver_matrix)){
       if(sum(complete.cases(dataset[c(response,driver_matrix[,option_num])]))>0){
-        model = lm(as.formula(paste0(response, "~", paste0(driver_matrix[,option_num], collapse = ":"))), data = dataset)
+        model = lm(as.formula(paste0(response, "~", paste0(driver_matrix[,option_num], collapse = "+"))), data = dataset)
         AICcs = c(AICcs, AICc(model))
       } else{
         AICcs = c(AICcs, NA)
@@ -89,17 +119,55 @@ for(response in responses){
   }
 }
 
+paste0("O2 observations: ", sum(!is.na(dataset$slope_O2)))
+paste0("CO2 observations: ", sum(!is.na(dataset$pw_slope_co2)))
+paste0("RQ observations: ", sum(!is.na(dataset$slope_co2)&!is.na(dataset$slope_O2)))
 for(response in responses){
-  best_val = min(output[response])
-  print(output$drivers[output[response]<=best_val+2])
+  best_val = min(output[response][output[response]>-Inf])
+  print(paste0(response, ":"))
+  print(paste0(output$drivers[output[response]<=best_val+2],": AIC = ",round(output[response][output[response]<=best_val+2])))
 }
 
-output[which.min(output$slope_co2),]
-output[which.min(output$slope_O2),]
+
+trimmed_output = output
+correlations = data.frame(cor(dataset[potential_drivers], use = "complete.obs"))
+for(col_name in colnames(correlations)){
+  prohibited_vals = row.names(correlations)[correlations[col_name]>0.5&row.names(correlations)!=col_name]
+  trimmed_output = trimmed_output[!grepl(col_name,trimmed_output$drivers)|!grepl(paste(prohibited_vals,collapse = "|"),trimmed_output$drivers),]
+}
+for(response in responses){
+  best_val = min(trimmed_output[response][trimmed_output[response]>-Inf])
+  print(paste0(response, ":"))
+  print(paste0(trimmed_output$drivers[trimmed_output[response]<=best_val+2],": AIC = ",round(trimmed_output[response][trimmed_output[response]<=best_val+2])))
+}
 
 mo%>%
-  ggplot(aes(x = Date_start, y = RQ))+
+  ggplot(aes(x = as.Date(Date_start), y = slope_co2))+
   geom_point()
+
+#Best models for monthly dataset (trimmed)
+summary(lm(pw_slope_o2_oxygenation~o2_init+mg_L_day_O2+doc_init+Fe_mean, data = mo)) #all are significant and intuitive. 43 df
+#Initial oxygen increases oxygen demand (rate of change is more negative)
+#Oxygenation increases oxygen demand
+#fe concentrations increase oxygen demand
+#YAY this all makes sense
+summary(lm(pw_slope_co2~mg_L_day_O2+doc_init+Fe_mean+schmidt_mean,data = mo)) #o2_init is significant. 23 df
+#Inital O2 increases CO2 production
+#Oxygenation (insignificantly) decreases co2 production (not sure why)
+#DOC (insignificantly) decreases co2 production (very unintuitive)
+#Schmidt stability (insignificantly) increases CO2 accumulation (intuitive)
+mo%>%
+  ggplot(aes(x = RQ, y = Fe_mean, size = Observations_co2))+
+  geom_point()
+summary(lm(RQ~mg_L_day_O2+schmidt_mean,data = mo)) #Fe, schmidt are significant. 24 df
+#Greater RQ = MORE CO2 produced relative to O2 consumed
+#oxygenation insignificantly decreases RQ- intuitive!
+#Fe increases RQ- maybe fe is an indicator of reducing conditions, so more fermentation
+#schmidt decreases rq- co2 evades faster than o2
+summary(lm(slope_dic~mg_L_day_O2+Fe_mean+schmidt_mean,data = mo)) #all are insignificant. 24 df
+
+
+mo[!is.na(mo$RQ)&(mo$RQ<0|mo$RQ>1),]
 ```
 
 
